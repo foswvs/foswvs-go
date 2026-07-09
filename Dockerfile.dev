@@ -1,0 +1,21 @@
+FROM golang:1.23-bookworm
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    iptables \
+    iproute2 \
+    procps \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install air for hot reload
+RUN go install github.com/air-verse/air@v1.61.7
+
+WORKDIR /app
+
+COPY go.mod go.sum ./
+RUN go mod download
+
+EXPOSE 8080
+
+ENV FOSWVS_DEV=1
+
+CMD ["air", "-c", ".air.toml"]

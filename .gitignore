@@ -1,0 +1,10 @@
+tmp/
+data/
+foswvs-go
+foswvs-go-arm
+foswvs-go-arm64
+*.tar.gz
+*.db
+*.har
+password.sha256
+certs/

@@ -1,0 +1,26 @@
+root = "."
+tmp_dir = "tmp"
+
+[build]
+  bin = "./tmp/foswvs-go"
+  cmd = "go build -o ./tmp/foswvs-go ./cmd/main.go"
+  delay = 1000
+  exclude_dir = ["tmp", "web", "conf", ".git"]
+  exclude_regex = ["_test.go"]
+  include_ext = ["go"]
+  kill_delay = "0s"
+  send_interrupt = false
+  stop_on_error = true
+  args_bin = ["-addr", ":8080", "-data-dir", "/app/data", "-web-dir", "/app/web/static"]
+
+[color]
+  build = "yellow"
+  main = "magenta"
+  runner = "green"
+  watcher = "cyan"
+
+[log]
+  time = false
+
+[misc]
+  clean_on_exit = true

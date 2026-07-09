@@ -1,0 +1,22 @@
+[Unit]
+Description=PisoWiFi - Free and Open-Source WiFi Vendo (Go)
+After=network.target hostapd.service isc-dhcp-server.service
+Wants=hostapd.service isc-dhcp-server.service
+
+[Service]
+Type=simple
+ExecStartPre=/usr/local/bin/foswvs-iptables-base.sh
+# Once you've generated TLS certs (see INSTALL.md "Enable HTTPS"), append
+# these to ExecStart below:
+#   -tls-addr :443 -tls-cert /home/pi/foswvs-go/ssl/foswvs.crt -tls-key /home/pi/foswvs-go/ssl/foswvs.key
+ExecStart=/usr/local/bin/foswvs-go \
+  -addr :80 \
+  -data-dir /home/pi/foswvs-go \
+  -web-dir /home/pi/foswvs-go/web/static
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

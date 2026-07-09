@@ -1,0 +1,621 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0d9488" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0d0f14" media="(prefers-color-scheme: dark)">
+<link rel="shortcut icon" href="/favicon.ico" type="image/x-icon">
+<link rel="stylesheet" href="/css/portal.css">
+<title>PisoWiFi</title>
+</head>
+<body>
+<div class="app-shell">
+  <header class="topbar" id="topbar" style="display:none;">
+    <div class="topbar-inner">
+      <h1 id="topbar-title" style="margin-right:0;">Rates</h1>
+    </div>
+  </header>
+
+  <main class="content">
+
+    <!-- ===== Home ===== -->
+    <section class="view" id="view-home">
+      <div class="brand">
+        <h1>PISO WIFI</h1>
+        <p class="slogan">&#8369;1 &bull; &#8369;5 &bull; &#8369;10 &bull; &#8369;20</p>
+      </div>
+
+      <div class="card" id="maintenance-card" style="display:none; text-align:center;">
+        <svg viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:36px;height:36px;color:var(--warning);margin-bottom:10px;"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94z"/></svg>
+        <h2 style="margin-bottom:6px;">Under Maintenance</h2>
+        <p class="hint">This WiFi portal is temporarily unavailable. Please check back soon.</p>
+      </div>
+
+      <div class="status-row" id="status-row">
+        <div class="status-pill checking" id="stat"><span class="dot"></span><span id="stat-text">CHECKING NETWORK</span></div>
+      </div>
+
+      <div class="card" id="maintenance-free-banner" style="display:none; text-align:center;">
+        <svg viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:28px;height:28px;color:var(--brand);margin-bottom:8px;"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94z"/></svg>
+        <h2 style="margin-bottom:4px;">Free WiFi During Maintenance</h2>
+        <p class="hint">The coin slot is offline &mdash; enjoy up to <span id="maintenance-free-mb">0MB</span> free while it's fixed.</p>
+      </div>
+
+      <div class="card" id="topup-info">
+        <span class="spinner"></span>
+        <div class="amount" id="topup-amt">&#8369;0</div>
+        <div class="topup-mb" id="topup-mb">0MB</div>
+        <div class="countdown" id="topup-cd">waiting for payment</div>
+      </div>
+
+      <div class="card" id="btn-card" style="text-align:center;">
+        <button id="btn" class="btn btn-coin">INSERT COIN</button>
+      </div>
+
+      <div class="card" id="data-card">
+        <div class="data-hero">
+          <div class="label">Data Remaining</div>
+          <div class="value" id="mb_free">0<span class="unit">MB</span></div>
+        </div>
+        <div class="progress"><div class="progress-fill" id="progress-fill" style="width:0%"></div></div>
+        <div class="progress-caption">
+          <span id="mb_used_cap">0MB used</span>
+          <span id="mb_limit_cap">0MB total</span>
+        </div>
+
+        <details class="device-info">
+          <summary>Device info
+            <svg viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+          </summary>
+          <div class="info-list">
+            <div class="row"><span class="label">MAC Address</span><span class="value" id="mac_addr">Identifying&hellip;</span></div>
+            <div class="row"><span class="label">IP Address</span><span class="value" id="ip_addr">0.0.0.0</span></div>
+          </div>
+        </details>
+      </div>
+    </section>
+
+    <!-- ===== Rates ===== -->
+    <section class="view" id="view-rates" style="display:none;">
+      <div class="card">
+        <div id="rates"></div>
+      </div>
+    </section>
+
+    <!-- ===== Share ===== -->
+    <section class="view" id="view-share" style="display:none;">
+      <div class="qr-hero">
+        <div class="card qr-receive-card">
+          <p class="eyebrow">Your Share Code</p>
+          <div class="qr-card loading" id="qr-card">Generating&hellip;</div>
+          <div class="share-code" id="share-code">-----</div>
+          <p class="hint">Others can scan this to send you data</p>
+        </div>
+
+        <button class="btn btn-primary" id="btn-scan">
+          <svg viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/></svg>
+          SEND DATA
+        </button>
+      </div>
+    </section>
+
+    <!-- ===== History ===== -->
+    <section class="view" id="view-txn" style="display:none;">
+      <div class="card">
+        <table class="txn-table" id="txn">
+          <tr><th>Amount</th><th>Data</th><th>Used</th><th>Date</th></tr>
+        </table>
+        <div id="empty" class="empty-state" style="display:none;">
+          <svg viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15.5 14"/></svg>
+          <div>No transactions yet</div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <nav class="bottom-nav">
+    <div class="bottom-nav-inner">
+      <a class="nav-item" href="#home" data-view="home">
+        <svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><path d="M2 8.5a15 15 0 0 1 20 0"/><path d="M5 12.5a10 10 0 0 1 14 0"/><path d="M8.5 16.5a5 5 0 0 1 7 0"/><circle cx="12" cy="20" r="1" fill="currentColor" stroke="none"/></svg>
+        Home
+      </a>
+      <a class="nav-item" href="#rates" data-view="rates">
+        <svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2H2v10l9.29 9.29a2 2 0 0 0 2.83 0l6.58-6.58a2 2 0 0 0 0-2.83L12 2Z"/><circle cx="7" cy="7" r="1.4" fill="currentColor" stroke="none"/></svg>
+        Rates
+      </a>
+      <a class="nav-item" href="#share" data-view="share">
+        <svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+        Share
+      </a>
+      <a class="nav-item" href="#txn" data-view="txn">
+        <svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15.5 14"/></svg>
+        History
+      </a>
+    </div>
+  </nav>
+</div>
+
+<!-- Full-screen sender flow: sits outside .app-shell so it can cover the whole viewport, including the bottom nav -->
+<div class="sender-sheet" id="sender-sheet">
+  <div class="sheet-panel scan-panel" id="panel-scanning">
+    <video id="scan-video" autoplay playsinline muted></video>
+    <div class="scan-dim">
+      <span class="corner tl"></span><span class="corner tr"></span>
+      <span class="corner bl"></span><span class="corner br"></span>
+    </div>
+    <header class="scan-topbar">
+      <button class="scan-close" id="btn-scan-cancel" aria-label="Close">
+        <svg viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+      <span class="scan-title">Scan QR Code</span>
+    </header>
+    <footer class="scan-footer">
+      <p class="hint" id="scan-hint">Point your camera at the receiver&rsquo;s QR code</p>
+      <button class="link-btn-light" id="btn-manual-toggle">Enter Code Manually</button>
+    </footer>
+  </div>
+
+  <div class="sheet-panel modal-panel" id="panel-modal" style="display:none;">
+    <header class="modal-topbar">
+      <button class="icon-btn" id="btn-modal-back" aria-label="Back to scanner">
+        <svg viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+      </button>
+      <h2 id="modal-title">Enter Code</h2>
+      <button class="icon-btn" id="btn-modal-close" aria-label="Close">
+        <svg viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </header>
+    <div class="modal-body">
+      <div id="modal-manual">
+        <div class="field">
+          <label for="manual-code">Recipient code</label>
+          <input type="text" id="manual-code" placeholder="e.g. AB12C" maxlength="5" autocomplete="off">
+        </div>
+        <button class="btn btn-primary" id="btn-manual-continue">CONTINUE</button>
+      </div>
+      <div id="modal-confirm" style="display:none;">
+        <div class="confirm-code-row">
+          <svg viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+          Sending to <strong id="confirm-code-text">-----</strong>
+        </div>
+        <div class="field">
+          <label for="size">Amount to share</label>
+          <input type="number" id="size" placeholder="MB to share" inputmode="numeric">
+        </div>
+        <button class="btn btn-primary" id="btn-share">SHARE DATA</button>
+        <button class="btn btn-secondary btn-block" id="btn-change-code">CHANGE CODE</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<audio id="coin-sfx" src="/sfx/coin.wav" preload="auto"></audio>
+
+<script src="/js/vendor/qrcode-generator.min.js"></script>
+<script src="/js/vendor/jsQR.min.js"></script>
+<script src="/js/portal.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+const btn = $('btn'), stat = $('stat'), statText = $('stat-text');
+
+let ws, mbFree = 0, mbLimit = 0, topupActive = false, reconnectTimer, netStatus = 'checking', lastCoinAmt = 0, maintenanceMode = 'off';
+
+// --- WebSocket (single connection shared by every tab) ---
+function wsConnect() {
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  const url = `${proto}://${location.host}/ws`;
+  // Browsers don't allow custom headers on WebSocket connections, so the
+  // device token rides in the Sec-WebSocket-Protocol handshake header via
+  // the constructor's subprotocol argument instead of the URL.
+  const token = Portal.getDeviceToken();
+  ws = token ? new WebSocket(url, [token]) : new WebSocket(url);
+
+  ws.onmessage = (e) => {
+    const msg = JSON.parse(e.data);
+    switch(msg.type) {
+      case 'data_usage':
+        updateDataUsage(msg.data);
+        break;
+      case 'network_status':
+        updateStatus(msg.data.status);
+        break;
+      case 'topup_progress':
+        showTopupProgress(msg.data);
+        break;
+      case 'topup_done':
+        topupDone(msg.data);
+        break;
+      case 'share_received':
+        Portal.toast(msg.data.message, true);
+        break;
+      case 'alert':
+        Portal.toast(msg.data.message, false);
+        break;
+      case 'device_token':
+        Portal.setDeviceToken(msg.data.token);
+        break;
+      case 'maintenance':
+        applyMaintenance(msg.data);
+        break;
+      case 'unregistered':
+        if (location.pathname !== '/unregistered.html') {
+          location.assign('/unregistered.html');
+        }
+        break;
+    }
+  };
+
+  ws.onclose = () => {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = setTimeout(wsConnect, 3000);
+  };
+}
+
+function updateDataUsage(d) {
+  mbLimit = d.mb_limit;
+  mbFree = d.mb_limit - d.mb_used;
+  const free = Portal.formatMB(Math.max(mbFree, 0));
+  const freeMatch = free.match(/^([\d.]+)(\D+)$/) || [null, free, ''];
+  $('mb_free').innerHTML = `${freeMatch[1]}<span class="unit">${freeMatch[2]}</span>`;
+  $('mb_used_cap').textContent = Portal.formatMB(d.mb_used) + ' used';
+  $('mb_limit_cap').textContent = Portal.formatMB(d.mb_limit) + ' total';
+  $('progress-fill').style.width = d.mb_limit > 0 ? Math.min(100, (d.mb_used / d.mb_limit) * 100) + '%' : '0%';
+  $('mac_addr').textContent = d.mac;
+  $('ip_addr').textContent = d.ip;
+  updateButton();
+}
+
+function updateStatus(s) {
+  netStatus = s;
+  statText.textContent = s.toUpperCase();
+  stat.className = 'status-pill ' + s;
+  updateButton();
+}
+
+function updateButton() {
+  if (topupActive) return;
+  btn.className = 'btn';
+
+  if (maintenanceMode === 'free') {
+    // Coinslot's presumed offline for the duration — never offer INSERT
+    // COIN. Once connected there's nothing left to do here.
+    if (netStatus === 'connected') {
+      $('btn-card').style.display = 'none';
+      return;
+    }
+    $('btn-card').style.display = '';
+    btn.textContent = mbFree > 0 ? 'CONNECT' : 'GET FREE WIFI';
+    btn.classList.add('btn-connect');
+    return;
+  }
+
+  $('btn-card').style.display = '';
+  if (netStatus === 'disconnected' && mbFree > 0) {
+    btn.textContent = 'CONNECT';
+    btn.classList.add('btn-connect');
+  } else {
+    btn.textContent = 'INSERT COIN';
+    btn.classList.add('btn-coin');
+  }
+}
+
+// --- Maintenance mode ---
+function applyMaintenance(mc) {
+  maintenanceMode = mc.mode;
+  const lockdown = mc.mode === 'lockdown';
+  const free = mc.mode === 'free';
+
+  $('maintenance-card').style.display = lockdown ? '' : 'none';
+  $('status-row').style.display = lockdown ? 'none' : '';
+  $('data-card').style.display = lockdown ? 'none' : '';
+  $('maintenance-free-banner').style.display = free ? '' : 'none';
+  if (free) $('maintenance-free-mb').textContent = Portal.formatMB(mc.free_mb);
+
+  if (lockdown) {
+    $('topup-info').style.display = 'none';
+    $('btn-card').style.display = 'none';
+  } else {
+    updateButton();
+  }
+}
+
+// --- Topup ---
+function showTopupProgress(d) {
+  topupActive = true;
+  const info = $('topup-info');
+  info.style.display = 'block';
+  $('topup-amt').textContent = Portal.peso.format(d.amt);
+  $('topup-mb').textContent = Portal.formatMB(d.mb);
+  $('topup-cd').textContent = `waiting for payment (${d.cd}s)`;
+  btn.textContent = 'DONE';
+  btn.className = 'btn btn-cancel';
+
+  // TopupResult ticks arrive on every poll (coinslot sensor is read every
+  // 100ms/500ms) with the cumulative coin count, not just when a coin is
+  // actually inserted — only play the sfx on a rising edge, i.e. an actual
+  // new-coin confirmation from the coinslot, not every heartbeat tick.
+  if (d.amt > lastCoinAmt) {
+    try { $('coin-sfx').play(); } catch(e) {}
+  }
+  lastCoinAmt = d.amt;
+}
+
+function topupDone(d) {
+  topupActive = false;
+  lastCoinAmt = 0;
+  $('topup-info').style.display = 'none';
+  Portal.toast(`Added ${Portal.formatMB(d.mb)} (${Portal.peso.format(d.amt)})`, true);
+  updateDataUsage(d);
+  updateStatus('connected');
+}
+
+// --- Button click ---
+btn.addEventListener('click', () => {
+  const label = btn.textContent.toLowerCase();
+
+  if (label === 'connect' || label === 'get free wifi') {
+    fetch('/api/connect', {method:'POST'}).then(r => {
+      if (r.ok) updateStatus('connected');
+      else Portal.toast('no data available', false);
+    });
+    return;
+  }
+
+  if (label === 'done') {
+    fetch('/api/topup_cancel');
+    topupActive = false;
+    lastCoinAmt = 0;
+    $('topup-info').style.display = 'none';
+    updateButton();
+    return;
+  }
+
+  // Insert coin
+  lastCoinAmt = 0;
+  btn.textContent = '...';
+  fetch('/api/topup').then(r => {
+    if (r.status === 409) { Portal.toast('coinslot is busy', false); updateButton(); }
+    else if (r.status === 429) { Portal.toast('too many attempts', false); updateButton(); }
+    else if (r.status === 202) { /* WS will handle progress */ }
+    else { updateButton(); }
+  }).catch(() => { updateButton(); });
+});
+
+// --- Rates tab (lazy, loaded once) ---
+let ratesLoaded = false;
+function loadRates() {
+  if (ratesLoaded) return;
+  ratesLoaded = true;
+  fetch('/api/rates').then(r => r.json()).then(rates => {
+    const el = $('rates');
+    const sorted = Object.entries(rates).sort((a,b) => parseInt(a[0]) - parseInt(b[0]));
+    el.innerHTML = sorted.map(([amt, mb]) =>
+      `<div class="rate"><span class="amt">&#8369;${amt}</span><span class="mb">${Portal.formatMB(mb)}</span></div>`
+    ).join('');
+  });
+}
+
+// --- Share tab: receive (QR + code, lazy fetch — POST mints a new code each call) ---
+let shareCodeLoaded = false;
+function loadShareCode() {
+  if (shareCodeLoaded) return;
+  shareCodeLoaded = true;
+  fetch('/api/share', {method:'POST'})
+    .then(r => r.text())
+    .then(code => {
+      $('share-code').textContent = code;
+      renderQR(code);
+    });
+}
+
+function renderQR(text) {
+  const qr = qrcode(0, 'M');
+  qr.addData(text);
+  qr.make();
+  const n = qr.getModuleCount();
+  const cell = 6; // render above display size so it stays crisp when CSS scales it down
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = n * cell;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = '#000';
+  for (let r = 0; r < n; r++) {
+    for (let c = 0; c < n; c++) {
+      if (qr.isDark(r, c)) ctx.fillRect(c * cell, r * cell, cell, cell);
+    }
+  }
+  const holder = $('qr-card');
+  holder.classList.remove('loading');
+  holder.innerHTML = '';
+  holder.appendChild(canvas);
+}
+
+// --- Share tab: send (full-screen sheet — scan QR or type code, then ask amount) ---
+const sheet = $('sender-sheet');
+let sheetOpen = false, scanStream = null, scanRAF = null, scanCanvas = null, pendingCode = '';
+
+function showPanel(name) {
+  $('panel-scanning').style.display = (name === 'scanning') ? '' : 'none';
+  $('panel-modal').style.display = (name === 'manual' || name === 'confirm') ? '' : 'none';
+  $('modal-manual').style.display = (name === 'manual') ? '' : 'none';
+  $('modal-confirm').style.display = (name === 'confirm') ? '' : 'none';
+  if (name === 'manual' || name === 'confirm') {
+    $('modal-title').textContent = (name === 'manual') ? 'Enter Code' : 'Send Data';
+  }
+}
+
+function openSheet() {
+  sheetOpen = true;
+  sheet.classList.add('open');
+  showPanel('scanning');
+  startScan();
+}
+
+function closeSheet() {
+  sheetOpen = false;
+  stopScan();
+  sheet.classList.remove('open');
+  setTimeout(() => {
+    if (!sheetOpen) {
+      showPanel('scanning');
+      $('manual-code').value = '';
+      $('size').value = '';
+      $('btn-share').textContent = 'SHARE DATA';
+    }
+  }, 320);
+}
+
+function cameraErrorMessage(err) {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return 'Camera requires a secure connection — enter the code manually';
+  if (err && err.name === 'NotAllowedError') return 'Camera access denied — enter the code manually';
+  if (err && err.name === 'NotFoundError') return 'No camera found — enter the code manually';
+  return 'Camera unavailable — enter the code manually';
+}
+
+async function startScan() {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    Portal.toast(cameraErrorMessage(), false);
+    showPanel('manual');
+    return;
+  }
+  try {
+    scanStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+    const video = $('scan-video');
+    video.srcObject = scanStream;
+    await video.play();
+    scanCanvas = document.createElement('canvas');
+    scanLoop();
+  } catch (err) {
+    Portal.toast(cameraErrorMessage(err), false);
+    showPanel('manual');
+  }
+}
+
+function scanLoop() {
+  if (!scanStream) return;
+  const video = $('scan-video');
+  const w = video.videoWidth, h = video.videoHeight;
+  if (w && h) {
+    scanCanvas.width = w;
+    scanCanvas.height = h;
+    const ctx = scanCanvas.getContext('2d', { willReadFrequently: true });
+    ctx.drawImage(video, 0, 0, w, h);
+    const imgData = ctx.getImageData(0, 0, w, h);
+    const result = jsQR(imgData.data, w, h);
+    if (result && result.data) {
+      onScanSuccess(result.data.trim().toUpperCase());
+      return;
+    }
+  }
+  scanRAF = requestAnimationFrame(scanLoop);
+}
+
+function stopScan() {
+  if (scanRAF) { cancelAnimationFrame(scanRAF); scanRAF = null; }
+  if (scanStream) { scanStream.getTracks().forEach(t => t.stop()); scanStream = null; }
+}
+
+function onScanSuccess(code) {
+  stopScan();
+  if (code.length !== 5) { Portal.toast("That QR code isn't a valid share code", false); showPanel('scanning'); startScan(); return; }
+  enterConfirm(code);
+}
+
+function enterConfirm(code) {
+  pendingCode = code;
+  $('confirm-code-text').textContent = code;
+  showPanel('confirm');
+  $('size').focus();
+}
+
+$('btn-scan').addEventListener('click', openSheet);
+$('btn-scan-cancel').addEventListener('click', closeSheet);
+$('btn-modal-close').addEventListener('click', closeSheet);
+$('btn-modal-back').addEventListener('click', () => { showPanel('scanning'); startScan(); });
+$('btn-manual-toggle').addEventListener('click', () => { stopScan(); showPanel('manual'); $('manual-code').focus(); });
+$('btn-manual-continue').addEventListener('click', () => {
+  const code = $('manual-code').value.trim().toUpperCase();
+  if (code.length !== 5) { Portal.toast('Invalid code', false); return; }
+  enterConfirm(code);
+});
+$('btn-change-code').addEventListener('click', () => { showPanel('manual'); $('manual-code').focus(); });
+
+$('btn-share').addEventListener('click', () => {
+  const size = $('size').value.trim();
+  if (!size || isNaN(size) || Number(size) <= 0) { Portal.toast('Invalid size', false); return; }
+
+  fetch('/api/share', {
+    method: 'PUT',
+    body: pendingCode + '|' + size
+  }).then(async r => {
+    const text = await r.text();
+    Portal.toast(text, r.ok);
+    if (r.ok) closeSheet();
+  });
+});
+
+$('size').addEventListener('input', () => {
+  const s = parseInt($('size').value);
+  $('btn-share').textContent = s > 0 ? `SHARE ${Portal.formatMB(s)}` : 'SHARE DATA';
+});
+
+document.addEventListener('keyup', e => {
+  if (e.key === 'Escape' && sheetOpen) { closeSheet(); return; }
+  if (e.key !== 'Enter' || !document.activeElement) return;
+  if (document.activeElement.id === 'manual-code') $('btn-manual-continue').click();
+  if (document.activeElement.id === 'size') $('btn-share').click();
+});
+
+document.addEventListener('visibilitychange', () => {
+  if (!sheetOpen) return;
+  if (document.hidden) {
+    stopScan();
+  } else if ($('panel-scanning').style.display !== 'none' && !scanStream) {
+    startScan();
+  }
+});
+
+// --- History tab (refetched every time it's opened) ---
+function loadTxn() {
+  fetch('/api/txn').then(r => r.json()).then(txns => {
+    const table = $('txn');
+    table.querySelectorAll('tr:not(:first-child)').forEach(tr => tr.remove());
+    $('empty').style.display = (!txns || txns.length === 0) ? 'block' : 'none';
+    (txns || []).forEach(t => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td>&#8369;${t.amt}</td><td>${Portal.formatMB(t.mb_limit)}</td><td>${Portal.formatMB(t.mb_used)}</td><td>${new Date(t.ts).toLocaleString('en-PH',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})}</td>`;
+      table.appendChild(tr);
+    });
+  });
+}
+
+// --- Tab routing ---
+const TITLES = { home: 'Home', rates: 'Rates', share: 'Share Data', txn: 'Transactions' };
+const VIEWS = Object.keys(TITLES);
+const topbar = $('topbar'), topbarTitle = $('topbar-title'), content = document.querySelector('.content');
+
+function showView(name) {
+  if (!VIEWS.includes(name)) name = 'home';
+  if (name !== 'share' && sheetOpen) closeSheet();
+  VIEWS.forEach(v => { $('view-' + v).style.display = (v === name) ? '' : 'none'; });
+  document.querySelectorAll('.nav-item').forEach(a => a.classList.toggle('active', a.dataset.view === name));
+  topbar.style.display = name === 'home' ? 'none' : '';
+  topbarTitle.textContent = TITLES[name];
+  content.classList.toggle('center-content', name === 'share');
+  if (name === 'rates') loadRates();
+  if (name === 'share') loadShareCode();
+  if (name === 'txn') loadTxn();
+  window.scrollTo(0, 0);
+}
+
+window.addEventListener('hashchange', () => showView(location.hash.slice(1)));
+
+// --- Init ---
+showView(location.hash.slice(1));
+wsConnect();
+</script>
+</body>
+</html>

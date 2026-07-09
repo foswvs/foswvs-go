@@ -1,0 +1,62 @@
+services:
+  # --- Dev mode: hot reload, source mounted ---
+  dev:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    ports:
+      - "8080:8080"
+    volumes:
+      - .:/app
+      - go-mod-cache:/go/pkg/mod
+      - go-build-cache:/root/.cache/go-build
+      - dev-data:/app/data
+    environment:
+      - FOSWVS_DEV=1
+    # iptables needs NET_ADMIN; skip if you don't need firewall testing
+    # cap_add:
+    #   - NET_ADMIN
+
+  # --- Dev mode with HTTPS: for testing browser features that require a
+  # secure context (camera, etc. — see web/static/index.html's QR scanner).
+  # Uses a self-signed cert (run scripts/gen-dev-cert.sh first) and shares
+  # the same source/data volumes as `dev`, so it must be run instead of
+  # `dev`, not alongside it (both bind host port 8080).
+  # Start with: docker compose --profile https up dev-https
+  dev-https:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    ports:
+      - "8080:8080"
+      - "8443:8443"
+    volumes:
+      - .:/app
+      - go-mod-cache:/go/pkg/mod
+      - go-build-cache:/root/.cache/go-build
+      - dev-data:/app/data
+    environment:
+      - FOSWVS_DEV=1
+    command: ["air", "-c", ".air.https.toml"]
+    profiles:
+      - https
+
+  # --- Production-like build ---
+  prod:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    volumes:
+      - prod-data:/home/pisodev/foswvs-go
+    environment:
+      - FOSWVS_DEV=1
+    profiles:
+      - prod
+
+volumes:
+  go-mod-cache:
+  go-build-cache:
+  dev-data:
+  prod-data:

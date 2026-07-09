@@ -1,0 +1,750 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0d9488" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0d0f14" media="(prefers-color-scheme: dark)">
+<link rel="shortcut icon" href="/favicon.ico" type="image/x-icon">
+<link rel="stylesheet" href="/css/portal.css">
+<link rel="stylesheet" href="/css/admin.css">
+<title>Admin &mdash; PisoWiFi</title>
+</head>
+<body>
+
+<!-- ===== Login ===== -->
+<div class="app-shell" id="login-view">
+  <main class="content center-content">
+    <div class="card login-card">
+      <div class="lock">
+        <svg viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+      </div>
+      <h1>Admin</h1>
+      <p class="sub" id="login-sub">Sign in to manage PisoWiFi</p>
+      <input type="password" id="pwd" placeholder="Password" autocomplete="current-password">
+      <button class="btn btn-primary" id="btn-login">LOG IN</button>
+      <div class="login-sysinfo">
+        <span>CPU <b id="login-temp">--</b>&deg;</span>
+        <span id="login-uptime">--</span>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- ===== Dashboard ===== -->
+<div class="app-shell hidden" id="dash-view">
+  <header class="topbar" id="topbar" style="display:none;">
+    <div class="topbar-inner">
+      <button class="icon-btn" id="btn-back" style="display:none;" aria-label="Back">
+        <svg viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+      </button>
+      <h1 id="topbar-title">Devices</h1>
+    </div>
+  </header>
+
+  <main class="content">
+
+    <!-- ===== Dashboard tab ===== -->
+    <section class="view" id="view-dashboard">
+      <div class="brand">
+        <h1>PISO WIFI</h1>
+        <p class="slogan">Admin Dashboard</p>
+      </div>
+
+      <div class="card tappable" id="maintenance-banner" style="display:none;">
+        <div class="list-row" style="padding:0; border-bottom:none;">
+          <div class="row-icon" style="background:rgba(217,119,6,0.14); color:var(--warning);">
+            <svg viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94z"/></svg>
+          </div>
+          <div class="row-main">
+            <div class="row-title" style="font-family:inherit; color:var(--warning);" id="maintenance-banner-title">Maintenance Mode Active</div>
+            <div class="row-sub" id="maintenance-banner-sub">&nbsp;</div>
+          </div>
+          <svg class="chev" viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+        </div>
+      </div>
+
+      <div class="card earnings-hero">
+        <div class="label">Today&rsquo;s Earnings</div>
+        <div class="value" id="e-day">&#8369;0</div>
+        <div class="earnings-sub">
+          <div class="item"><div class="val" id="e-week">&#8369;0</div><div class="label">Week</div></div>
+          <div class="item"><div class="val" id="e-month">&#8369;0</div><div class="label">Month</div></div>
+          <div class="item"><div class="val" id="e-year">&#8369;0</div><div class="label">Year</div></div>
+        </div>
+      </div>
+
+      <div class="card earnings-hero">
+        <div class="label">Today&rsquo;s Bandwidth</div>
+        <div class="value" id="bw-day">0MB</div>
+        <div class="earnings-sub">
+          <div class="item"><div class="val" id="bw-week">0MB</div><div class="label">Week</div></div>
+          <div class="item"><div class="val" id="bw-month">0MB</div><div class="label">Month</div></div>
+          <div class="item"><div class="val" id="bw-year">0MB</div><div class="label">Year</div></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="sysinfo-row">
+          <span class="sysinfo-chip">
+            <svg viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4v10.54a4 4 0 1 1-4 0V4a2 2 0 0 1 4 0z"/></svg>
+            CPU <span id="sys-temp">--</span>&deg;
+          </span>
+          <span class="sysinfo-chip">
+            <svg viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15.5 14"/></svg>
+            <span id="sys-uptime">--</span>
+          </span>
+        </div>
+      </div>
+
+      <div class="card quick-link" id="quick-active">
+        <div class="count" id="active-count">0</div>
+        <div class="txt">
+          <div class="t">Devices Online</div>
+          <div class="s">Tap to view active devices</div>
+        </div>
+        <svg class="chev" viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+      </div>
+    </section>
+
+    <!-- ===== Devices tab ===== -->
+    <section class="view" id="view-devices" style="display:none;">
+      <div class="chip-row">
+        <button class="chip active" id="chip-active" data-filter="active">Active</button>
+        <button class="chip" id="chip-all" data-filter="all">All</button>
+        <button class="chip" id="chip-restricted" data-filter="restricted">Restricted</button>
+      </div>
+      <div class="card">
+        <div id="device-list"></div>
+      </div>
+    </section>
+
+    <!-- ===== Device detail (drill-in from Devices) ===== -->
+    <section class="view" id="view-device-detail" style="display:none;">
+      <div class="card">
+        <div class="device-title">
+          <div class="mac" id="dd-mac">--</div>
+          <div class="host" id="dd-host">--</div>
+        </div>
+        <div class="status-row">
+          <div class="status-pill" id="dd-status"><span class="dot"></span><span id="dd-status-text">--</span></div>
+        </div>
+        <div class="progress"><div class="progress-fill" id="dd-progress" style="width:0%"></div></div>
+        <div class="progress-caption">
+          <span id="dd-used">0MB used</span>
+          <span id="dd-limit">0MB total</span>
+        </div>
+        <div class="info-list">
+          <div class="row"><span class="label">IP Address</span><span class="value" id="dd-ip">--</span></div>
+          <div class="row"><span class="label">Last Active</span><span class="value" id="dd-active">--</span></div>
+        </div>
+
+        <div class="action-grid">
+          <button class="btn btn-connect" id="btn-add-mb">+ Add MB</button>
+          <button class="btn btn-secondary" id="btn-clear-mb">Clear Data</button>
+        </div>
+        <button class="btn btn-cancel btn-block" id="btn-block-dev">Block Device</button>
+      </div>
+
+      <div class="card">
+        <h2>Sessions</h2>
+        <div id="dd-sessions"></div>
+        <div class="empty-state small" id="dd-sessions-empty" style="display:none;">No sessions yet</div>
+      </div>
+    </section>
+
+    <!-- ===== Transactions tab ===== -->
+    <section class="view" id="view-txn" style="display:none;">
+      <div class="card">
+        <div id="txn-list"></div>
+        <div class="empty-state small" id="txn-empty" style="display:none;">No transactions yet</div>
+        <button class="btn btn-secondary btn-block" id="btn-load-more">LOAD MORE</button>
+      </div>
+    </section>
+
+    <!-- ===== Settings tab ===== -->
+    <section class="view" id="view-settings" style="display:none;">
+      <div class="card">
+        <div class="list-row tappable" id="row-rates">
+          <div class="row-icon"><svg viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2H2v10l9.29 9.29a2 2 0 0 0 2.83 0l6.58-6.58a2 2 0 0 0 0-2.83L12 2Z"/><circle cx="7" cy="7" r="1.4" fill="currentColor" stroke="none"/></svg></div>
+          <div class="row-main"><div class="row-title" style="font-family:inherit;">Rates</div></div>
+          <svg class="chev" viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+        </div>
+        <div class="list-row tappable" id="row-password">
+          <div class="row-icon"><svg viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div>
+          <div class="row-main"><div class="row-title" style="font-family:inherit;">Change Password</div></div>
+          <svg class="chev" viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+        </div>
+        <div class="list-row tappable" id="row-gpio">
+          <div class="row-icon"><svg viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/><line x1="20" y1="9" x2="23" y2="9"/><line x1="20" y1="14" x2="23" y2="14"/><line x1="1" y1="9" x2="4" y2="9"/><line x1="1" y1="14" x2="4" y2="14"/></svg></div>
+          <div class="row-main"><div class="row-title" style="font-family:inherit;">Coinslot GPIO Pins</div></div>
+          <svg class="chev" viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+        </div>
+        <div class="list-row tappable" id="row-maintenance">
+          <div class="row-icon"><svg viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94z"/></svg></div>
+          <div class="row-main">
+            <div class="row-title" style="font-family:inherit;">Maintenance Mode</div>
+          </div>
+          <span class="chip active" id="maintenance-badge" style="display:none; flex:none; padding:4px 10px; font-size:10.5px;">ON</span>
+          <svg class="chev" viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="list-row tappable" id="row-portal">
+          <div class="row-icon"><svg viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></div>
+          <div class="row-main"><div class="row-title" style="font-family:inherit;">Open Customer Portal</div></div>
+        </div>
+        <div class="list-row tappable danger" id="row-logout">
+          <div class="row-icon"><svg viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg></div>
+          <div class="row-main"><div class="row-title" style="font-family:inherit;">Log Out</div></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== Rates (drill-in from Settings) ===== -->
+    <section class="view" id="view-rates" style="display:none;">
+      <div class="card">
+        <div id="rates-list"></div>
+        <button class="btn btn-secondary btn-block" id="btn-add-rate">+ ADD RATE</button>
+        <button class="btn btn-primary btn-block" id="btn-save-rates">SAVE RATES</button>
+      </div>
+    </section>
+
+    <!-- ===== Password (drill-in from Settings) ===== -->
+    <section class="view" id="view-password" style="display:none;">
+      <div class="card">
+        <div class="field">
+          <label for="new-pwd">New password</label>
+          <input type="password" id="new-pwd" placeholder="At least 3 characters">
+        </div>
+        <button class="btn btn-primary" id="btn-change-pwd">UPDATE PASSWORD</button>
+      </div>
+    </section>
+
+    <!-- ===== GPIO (drill-in from Settings) ===== -->
+    <section class="view" id="view-gpio" style="display:none;">
+      <div class="card">
+        <p class="hint" style="margin-bottom:16px;">Only change these if the coinslot isn&rsquo;t responding &mdash; they must match how the acceptor is actually wired.</p>
+        <div class="field">
+          <label for="gpio-slot">Slot pin (coin pulse input)</label>
+          <input type="number" id="gpio-slot" placeholder="e.g. 2" inputmode="numeric">
+        </div>
+        <div class="field">
+          <label for="gpio-sensor">Sensor pin (enable/disable output)</label>
+          <input type="number" id="gpio-sensor" placeholder="e.g. 17" inputmode="numeric">
+        </div>
+        <button class="btn btn-primary" id="btn-save-gpio">SAVE PINS</button>
+      </div>
+    </section>
+
+    <!-- ===== Maintenance Mode (drill-in from Settings) ===== -->
+    <section class="view" id="view-maintenance" style="display:none;">
+      <div class="card">
+        <p class="hint" style="margin-bottom:14px;">Use this if the coin acceptor stops working &mdash; lock the portal down entirely, or hand out a fixed amount of free data instead.</p>
+
+        <div class="chip-row">
+          <button class="chip" id="maint-chip-off" data-mode="off">Off</button>
+          <button class="chip" id="maint-chip-lockdown" data-mode="lockdown">Lockdown</button>
+          <button class="chip" id="maint-chip-free" data-mode="free">Free Access</button>
+        </div>
+
+        <p class="hint" id="maint-desc" style="text-align:left; margin-bottom:14px;"></p>
+
+        <div class="field" id="maint-freemb-field" style="display:none;">
+          <label for="maint-freemb">Free data per device (MB)</label>
+          <input type="number" id="maint-freemb" placeholder="e.g. 50" inputmode="numeric">
+        </div>
+
+        <button class="btn btn-primary" id="btn-save-maintenance">SAVE</button>
+      </div>
+    </section>
+
+  </main>
+
+  <nav class="bottom-nav">
+    <div class="bottom-nav-inner">
+      <a class="nav-item" href="#dashboard" data-view="dashboard">
+        <svg viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><rect x="7" y="12" width="3" height="6"/><rect x="12" y="8" width="3" height="10"/><rect x="17" y="4" width="3" height="14"/></svg>
+        Dashboard
+      </a>
+      <a class="nav-item" href="#devices" data-view="devices">
+        <svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><path d="M2 8.5a15 15 0 0 1 20 0"/><path d="M5 12.5a10 10 0 0 1 14 0"/><path d="M8.5 16.5a5 5 0 0 1 7 0"/><circle cx="12" cy="20" r="1" fill="currentColor" stroke="none"/></svg>
+        Devices
+      </a>
+      <a class="nav-item" href="#txn" data-view="txn">
+        <svg viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2h9l3 3v17H6z"/><line x1="9" y1="9" x2="15" y2="9"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="13" y2="17"/></svg>
+        Transactions
+      </a>
+      <a class="nav-item" href="#settings" data-view="settings">
+        <svg viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        Settings
+      </a>
+    </div>
+  </nav>
+</div>
+
+<!-- ===== Modals ===== -->
+<div class="modal-backdrop" id="modal-addmb">
+  <div class="modal-box">
+    <h2>Add Data</h2>
+    <p class="desc">Grant additional MB to this device.</p>
+    <div class="field">
+      <label for="addmb-input">Amount (MB)</label>
+      <input type="number" id="addmb-input" placeholder="e.g. 500" inputmode="numeric">
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" id="addmb-cancel">CANCEL</button>
+      <button class="btn btn-connect" id="addmb-confirm">ADD</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="modal-confirm">
+  <div class="modal-box">
+    <h2 id="confirm-title">Are you sure?</h2>
+    <p class="desc" id="confirm-desc"></p>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" id="confirm-cancel">CANCEL</button>
+      <button class="btn btn-cancel" id="confirm-ok">CONFIRM</button>
+    </div>
+  </div>
+</div>
+
+<script src="/js/portal.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+const peso = n => '₱' + Math.round(parseFloat(n) || 0).toLocaleString();
+
+let ws, currentFilter = 'active', currentMAC = '', txnOffset = 0, loggingOut = false;
+
+// --- Auth ---
+async function checkAuth() {
+  const r = await fetch('/api/admin/check');
+  const d = await r.json();
+  if (d.status === 'ok') { showDash(); return; }
+  if (d.status === 'init_required') { $('pwd').placeholder = 'Set new password'; $('login-sub').textContent = 'Set an admin password to get started'; }
+  $('login-view').classList.remove('hidden');
+}
+
+async function doLogin() {
+  const r = await fetch('/api/admin/login', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({password: $('pwd').value})
+  });
+  if (r.ok) { showDash(); }
+  else if (r.status === 400) { Portal.toast('Min 3 characters', false, {noNavOffset:true}); }
+  else { Portal.toast('Invalid password', false, {noNavOffset:true}); }
+}
+
+async function doLogout() {
+  loggingOut = true;
+  if (ws) ws.close();
+  await fetch('/api/admin/logout', {method:'POST'});
+  location.reload();
+}
+
+$('btn-login').addEventListener('click', doLogin);
+$('pwd').addEventListener('keyup', e => { if (e.key === 'Enter') doLogin(); });
+
+// --- Dashboard shell ---
+function showDash() {
+  $('login-view').classList.add('hidden');
+  $('dash-view').classList.remove('hidden');
+  connectAdminWS();
+  showView('dashboard');
+}
+
+// --- WebSocket ---
+function connectAdminWS() {
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  ws = new WebSocket(`${proto}://${location.host}/ws/admin`);
+  ws.onmessage = e => {
+    const msg = JSON.parse(e.data);
+    if (msg.type === 'earnings') renderEarnings(msg.data);
+    if (msg.type === 'bandwidth') renderBandwidth(msg.data);
+    if (msg.type === 'maintenance') renderMaintenanceBanner(msg.data);
+    if (msg.type === 'active_devices') {
+      $('active-count').textContent = (msg.data || []).length;
+      if (currentFilter === 'active' && currentView === 'devices') renderDevices(msg.data || []);
+    }
+    if (msg.type === 'system_info') renderSystem(msg.data);
+  };
+  ws.onclose = () => {
+    if (!loggingOut) setTimeout(connectAdminWS, 3000);
+  };
+}
+
+function renderEarnings(d) {
+  $('e-day').textContent = peso(d.day);
+  $('e-week').textContent = peso(d.week);
+  $('e-month').textContent = peso(d.month);
+  $('e-year').textContent = peso(d.year);
+}
+
+function renderBandwidth(d) {
+  $('bw-day').textContent = Portal.formatMB(d.day);
+  $('bw-week').textContent = Portal.formatMB(d.week);
+  $('bw-month').textContent = Portal.formatMB(d.month);
+  $('bw-year').textContent = Portal.formatMB(d.year);
+}
+
+function renderSystem(d) {
+  const t = parseFloat(d.cpu_temp).toFixed(1);
+  $('sys-temp').textContent = t;
+  $('login-temp').textContent = t;
+  $('sys-uptime').textContent = d.uptime;
+  $('login-uptime').textContent = d.uptime;
+}
+
+function renderMaintenanceBanner(mc) {
+  const active = mc.mode !== 'off';
+  $('maintenance-banner').style.display = active ? '' : 'none';
+  $('maintenance-badge').style.display = active ? '' : 'none';
+  if (mc.mode === 'lockdown') {
+    $('maintenance-banner-sub').textContent = 'Portal locked down — tap to review';
+  } else if (mc.mode === 'free') {
+    $('maintenance-banner-sub').textContent = `Free access enabled — up to ${Portal.formatMB(mc.free_mb)} per device`;
+  }
+}
+
+// --- Tab / drill-in routing ---
+const TITLES = { dashboard: 'Dashboard', devices: 'Devices', txn: 'Transactions', settings: 'Settings',
+                 'device-detail': 'Device', rates: 'Rates', password: 'Change Password', gpio: 'GPIO Pins',
+                 maintenance: 'Maintenance Mode' };
+const TABS = ['dashboard', 'devices', 'txn', 'settings'];
+const ALL_VIEWS = TABS.concat(['device-detail', 'rates', 'password', 'gpio', 'maintenance']);
+let currentView = 'dashboard';
+let drillParent = 'devices';
+const topbar = $('topbar'), topbarTitle = $('topbar-title'), btnBack = $('btn-back');
+
+function showView(name) {
+  if (!ALL_VIEWS.includes(name)) name = 'dashboard';
+  currentView = name;
+  ALL_VIEWS.forEach(v => { $('view-' + v).style.display = (v === name) ? '' : 'none'; });
+
+  const isTab = TABS.includes(name);
+  document.querySelectorAll('.nav-item').forEach(a => a.classList.toggle('active', a.dataset.view === name));
+  topbar.style.display = (name === 'dashboard') ? 'none' : '';
+  btnBack.style.display = isTab ? 'none' : '';
+  topbarTitle.textContent = TITLES[name];
+
+  if (name === 'devices') loadDevices(currentFilter);
+  if (name === 'txn') { txnOffset = 0; loadTxn(true); }
+  if (name === 'rates') loadRates();
+  if (name === 'gpio') loadGPIO();
+  if (name === 'maintenance') loadMaintenance();
+
+  window.scrollTo(0, 0);
+}
+
+btnBack.addEventListener('click', () => showView(drillParent));
+document.querySelectorAll('.nav-item').forEach(a => {
+  a.addEventListener('click', e => { e.preventDefault(); showView(a.dataset.view); });
+});
+$('quick-active').addEventListener('click', () => { selectFilter('active'); showView('devices'); });
+$('maintenance-banner').addEventListener('click', () => { drillParent = 'dashboard'; showView('maintenance'); });
+
+// --- Devices ---
+function selectFilter(filter) {
+  currentFilter = filter;
+  document.querySelectorAll('.chip').forEach(c => c.classList.toggle('active', c.dataset.filter === filter));
+  // Only reload here if we're already on the Devices tab — showView('devices')
+  // triggers its own load, so callers navigating in from elsewhere (e.g. the
+  // dashboard's "Devices Online" shortcut) don't double-fetch.
+  if (currentView === 'devices') loadDevices(currentFilter);
+}
+document.querySelectorAll('.chip').forEach(chip => {
+  chip.addEventListener('click', () => selectFilter(chip.dataset.filter));
+});
+
+async function loadDevices(filter) {
+  const r = await fetch('/api/admin/devices?filter=' + filter);
+  renderDevices(await r.json());
+}
+
+function renderDevices(devs) {
+  const el = $('device-list');
+  if (!devs || devs.length === 0) {
+    el.innerHTML = '<div class="empty-state small">No devices</div>';
+    return;
+  }
+  el.innerHTML = devs.map(d => `
+    <div class="list-row tappable" data-mac="${d.mac}">
+      <div class="row-icon"><svg viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="2" width="10" height="20" rx="2"/><line x1="11" y1="18" x2="13" y2="18"/></svg></div>
+      <div class="row-main">
+        <div class="row-title">${d.mac}</div>
+        <div class="row-sub">${d.ip} &middot; ${d.host}</div>
+      </div>
+      <div class="row-meta">${timeAgo(d.updated_at)}</div>
+    </div>
+  `).join('');
+  el.querySelectorAll('.list-row').forEach(row => {
+    row.addEventListener('click', () => showDevice(row.dataset.mac));
+  });
+}
+
+// --- Device detail ---
+async function showDevice(mac, parent) {
+  currentMAC = mac;
+  drillParent = parent || 'devices';
+  showView('device-detail');
+
+  const r = await fetch('/api/admin/device?mac=' + encodeURIComponent(mac));
+  const d = await r.json();
+
+  $('dd-mac').textContent = d.mac;
+  $('dd-host').textContent = d.host;
+  $('dd-ip').textContent = d.ip;
+  $('dd-active').textContent = d.active_at ? timeAgo(d.active_at) : 'never';
+
+  const status = d.connected ? 'connected' : 'disconnected';
+  $('dd-status').className = 'status-pill ' + status;
+  $('dd-status-text').textContent = status.toUpperCase();
+
+  $('dd-used').textContent = Portal.formatMB(d.mb_used) + ' used';
+  $('dd-limit').textContent = Portal.formatMB(d.mb_limit) + ' total';
+  $('dd-progress').style.width = d.mb_limit > 0 ? Math.min(100, (d.mb_used / d.mb_limit) * 100) + '%' : '0%';
+
+  const tr = await fetch('/api/admin/txn?mac=' + encodeURIComponent(mac));
+  const sessions = await tr.json();
+  $('dd-sessions-empty').style.display = (!sessions || sessions.length === 0) ? 'block' : 'none';
+  $('dd-sessions').innerHTML = (sessions || []).map(s => `
+    <div class="list-row">
+      <div class="row-main">
+        <div class="row-title" style="font-family:inherit;">${Portal.formatMB(s.mb_limit)}</div>
+        <div class="row-sub">${Portal.formatMB(s.mb_used)} used</div>
+      </div>
+      <div class="row-amt">${peso(s.amt)}</div>
+      <div class="row-meta">${shortDate(s.ts)}</div>
+    </div>
+  `).join('');
+}
+
+$('btn-add-mb').addEventListener('click', () => openModal('modal-addmb'));
+$('addmb-cancel').addEventListener('click', () => closeModal('modal-addmb'));
+$('addmb-confirm').addEventListener('click', async () => {
+  const mb = $('addmb-input').value;
+  if (!mb || isNaN(mb) || Number(mb) <= 0) { Portal.toast('Enter a valid amount', false); return; }
+  await fetch(`/api/admin/add_session?mac=${encodeURIComponent(currentMAC)}&limit=${mb}`);
+  closeModal('modal-addmb');
+  $('addmb-input').value = '';
+  Portal.toast('Added ' + Portal.formatMB(parseFloat(mb)), true);
+  showDevice(currentMAC);
+});
+
+$('btn-clear-mb').addEventListener('click', () => {
+  confirmAction('Clear all data?', 'This resets the device’s usage and balance to zero.', async () => {
+    await fetch(`/api/admin/clear_mb?mac=${encodeURIComponent(currentMAC)}`);
+    Portal.toast('Data cleared', true);
+    showDevice(currentMAC);
+  });
+});
+
+$('btn-block-dev').addEventListener('click', () => {
+  confirmAction('Block this device?', 'It will be disconnected and its data marked exhausted.', async () => {
+    await fetch(`/api/admin/block?mac=${encodeURIComponent(currentMAC)}`);
+    Portal.toast('Device blocked', true);
+    showDevice(currentMAC);
+  });
+});
+
+// --- Transactions ---
+async function loadTxn(reset) {
+  if (reset) { txnOffset = 0; $('txn-list').innerHTML = ''; }
+  const r = await fetch(`/api/admin/txn?offset=${txnOffset}&limit=25`);
+  const txns = await r.json();
+  $('txn-empty').style.display = (txnOffset === 0 && (!txns || txns.length === 0)) ? 'block' : 'none';
+
+  const wrapper = document.createElement('div');
+  wrapper.innerHTML = (txns || []).map(t => `
+    <div class="list-row tappable" data-mac="${t.mac}">
+      <div class="row-main">
+        <div class="row-title">${t.mac}</div>
+        <div class="row-sub">${Portal.formatMB(t.mb)}</div>
+      </div>
+      <div class="row-amt">${peso(t.amt)}</div>
+      <div class="row-meta">${shortDate(t.ts)}</div>
+    </div>
+  `).join('');
+  // Move (not copy) each new row into the list, attaching a listener only
+  // to what was just added — insertAdjacentHTML would've re-parsed the
+  // whole list on every "Load More" and left earlier rows un-clickable.
+  Array.from(wrapper.children).forEach(row => {
+    row.addEventListener('click', () => showDevice(row.dataset.mac, 'txn'));
+    $('txn-list').appendChild(row);
+  });
+
+  txnOffset += 25;
+  $('btn-load-more').style.display = (txns && txns.length === 25) ? '' : 'none';
+}
+$('btn-load-more').addEventListener('click', () => loadTxn(false));
+
+// --- Settings ---
+$('row-rates').addEventListener('click', () => { drillParent = 'settings'; showView('rates'); });
+$('row-password').addEventListener('click', () => { drillParent = 'settings'; showView('password'); });
+$('row-gpio').addEventListener('click', () => { drillParent = 'settings'; showView('gpio'); });
+$('row-maintenance').addEventListener('click', () => { drillParent = 'settings'; showView('maintenance'); });
+$('row-portal').addEventListener('click', () => location.assign('/'));
+$('row-logout').addEventListener('click', () => {
+  confirmAction('Log out?', 'You’ll need your password to sign back in.', doLogout);
+});
+
+// --- Rates ---
+async function loadRates() {
+  const r = await fetch('/api/admin/rates');
+  const rates = await r.json();
+  $('rates-list').innerHTML = '';
+  const sorted = Object.entries(rates || {}).sort((a,b) => parseInt(a[0]) - parseInt(b[0]));
+  if (sorted.length === 0) addRateRow();
+  for (const [amt, mb] of sorted) addRateRow(amt, mb);
+}
+
+function addRateRow(amt, mb) {
+  const div = document.createElement('div');
+  div.className = 'rate-edit-row';
+  div.innerHTML = `
+    <input type="number" placeholder="₱ Amount" value="${amt || ''}" inputmode="numeric">
+    <input type="number" placeholder="MB" value="${mb || ''}" inputmode="numeric">
+    <button class="rm-btn" aria-label="Remove">
+      <svg viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
+    </button>`;
+  div.querySelector('.rm-btn').addEventListener('click', () => div.remove());
+  $('rates-list').appendChild(div);
+}
+$('btn-add-rate').addEventListener('click', () => addRateRow());
+
+$('btn-save-rates').addEventListener('click', async () => {
+  const rows = $('rates-list').querySelectorAll('.rate-edit-row');
+  const entries = [];
+  rows.forEach(row => {
+    const inputs = row.querySelectorAll('input');
+    const a = inputs[0].value, m = inputs[1].value;
+    if (a && m) entries.push(a + ':' + m);
+  });
+  if (!entries.length) { Portal.toast('Add at least one rate', false); return; }
+  await fetch('/api/admin/rates', {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(entries)});
+  Portal.toast('Rates saved', true);
+});
+
+// --- Password ---
+$('btn-change-pwd').addEventListener('click', async () => {
+  const p = $('new-pwd').value;
+  if (p.length < 3) { Portal.toast('Min 3 characters', false); return; }
+  const r = await fetch('/api/admin/password', {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({password:p})});
+  if (!r.ok) { Portal.toast('Password update failed', false); return; }
+  Portal.toast('Password updated', true);
+  $('new-pwd').value = '';
+});
+
+// --- GPIO ---
+async function loadGPIO() {
+  const r = await fetch('/api/admin/gpio');
+  const cfg = await r.json();
+  $('gpio-slot').value = cfg.slot_pin;
+  $('gpio-sensor').value = cfg.sensor_pin;
+}
+
+$('btn-save-gpio').addEventListener('click', async () => {
+  const slot = parseInt($('gpio-slot').value, 10);
+  const sensor = parseInt($('gpio-sensor').value, 10);
+  if (!slot || !sensor || slot <= 0 || sensor <= 0) { Portal.toast('Enter valid pin numbers', false); return; }
+  if (slot === sensor) { Portal.toast('Slot and sensor pins must differ', false); return; }
+
+  const r = await fetch('/api/admin/gpio', {
+    method: 'PUT',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({slot_pin: slot, sensor_pin: sensor})
+  });
+  if (!r.ok) {
+    const d = await r.json().catch(() => ({}));
+    Portal.toast(d.error || 'Save failed', false);
+    return;
+  }
+  Portal.toast('GPIO pins updated', true);
+});
+
+// --- Maintenance mode ---
+const MAINT_DESC = {
+  off: 'Off — the portal works normally.',
+  lockdown: 'All devices are disconnected immediately, and no one can connect or pay until this is turned off.',
+  free: 'Devices without a paid balance get free data (once each) up to the limit below. Coin payments are disabled.',
+};
+let selectedMaintMode = 'off';
+
+function selectMaintMode(mode) {
+  selectedMaintMode = mode;
+  document.querySelectorAll('#view-maintenance .chip').forEach(c => c.classList.toggle('active', c.dataset.mode === mode));
+  $('maint-desc').textContent = MAINT_DESC[mode];
+  $('maint-freemb-field').style.display = mode === 'free' ? '' : 'none';
+}
+
+document.querySelectorAll('#view-maintenance .chip').forEach(chip => {
+  chip.addEventListener('click', () => selectMaintMode(chip.dataset.mode));
+});
+
+async function loadMaintenance() {
+  const r = await fetch('/api/admin/maintenance');
+  const cfg = await r.json();
+  $('maint-freemb').value = cfg.free_mb || '';
+  selectMaintMode(cfg.mode || 'off');
+}
+
+$('btn-save-maintenance').addEventListener('click', async () => {
+  const freeMB = parseFloat($('maint-freemb').value);
+  if (selectedMaintMode === 'free' && (!freeMB || freeMB <= 0)) {
+    Portal.toast('Enter a valid free data amount', false);
+    return;
+  }
+
+  const r = await fetch('/api/admin/maintenance', {
+    method: 'PUT',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({mode: selectedMaintMode, free_mb: freeMB || 0})
+  });
+  if (!r.ok) {
+    const d = await r.json().catch(() => ({}));
+    Portal.toast(d.error || 'Save failed', false);
+    return;
+  }
+  Portal.toast('Maintenance settings saved', true);
+});
+
+// --- Modals ---
+function openModal(id) { $(id).classList.add('open'); }
+function closeModal(id) { $(id).classList.remove('open'); }
+
+let confirmHandler = null;
+function confirmAction(title, desc, onConfirm) {
+  $('confirm-title').textContent = title;
+  $('confirm-desc').textContent = desc;
+  confirmHandler = onConfirm;
+  openModal('modal-confirm');
+}
+$('confirm-cancel').addEventListener('click', () => closeModal('modal-confirm'));
+$('confirm-ok').addEventListener('click', () => {
+  closeModal('modal-confirm');
+  if (confirmHandler) confirmHandler();
+});
+
+// --- Utils ---
+function timeAgo(ms) {
+  if (!ms) return '';
+  const s = Math.floor((Date.now() - ms) / 1000);
+  if (s < 60) return s + 's ago';
+  if (s < 3600) return Math.floor(s/60) + 'm ago';
+  if (s < 86400) return Math.floor(s/3600) + 'h ago';
+  return Math.floor(s/86400) + 'd ago';
+}
+
+function shortDate(ms) {
+  if (!ms) return '';
+  return new Date(ms).toLocaleString('en-PH', {month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
+}
+
+// --- Init ---
+checkAuth();
+</script>
+</body>
+</html>

@@ -1,0 +1,10 @@
+tmp/
+data/
+*.tar.gz
+foswvs-go
+foswvs-go-arm
+foswvs-go-arm64
+.git/
+.air.toml
+Dockerfile.dev
+docker-compose.yml

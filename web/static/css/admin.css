@@ -1,0 +1,142 @@
+/* PisoWiFi admin dashboard — builds on portal.css's tokens/base/components */
+
+.hidden { display: none !important; }
+
+/* --- Login --- */
+.login-card { text-align: center; }
+.login-card .lock {
+  width: 52px; height: 52px;
+  border-radius: 50%;
+  background: var(--brand-dim);
+  color: var(--brand);
+  display: flex; align-items: center; justify-content: center;
+  margin: 0 auto 16px;
+}
+.login-card .lock svg { width: 26px; height: 26px; }
+.login-card h1 { font-size: 1.3em; font-weight: 800; margin-bottom: 4px; }
+.login-card .sub { font-size: 0.88em; color: var(--text-dim); margin-bottom: 20px; }
+.login-card input { text-align: center; letter-spacing: 0.15em; margin-bottom: 12px; }
+.login-sysinfo {
+  display: flex; justify-content: center; gap: 16px;
+  margin-top: 18px; font-size: 12px; color: var(--text-faint); font-weight: 600;
+  visibility: hidden;
+}
+
+/* --- Earnings hero --- */
+.earnings-hero { text-align: center; }
+.earnings-hero .label { font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-faint); }
+.earnings-hero .value { font-size: 2.3em; font-weight: 800; letter-spacing: -0.02em; margin: 2px 0 16px; }
+.earnings-sub { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.earnings-sub .item { text-align: center; padding: 10px 4px; background: var(--bg); border-radius: var(--radius-sm); }
+.earnings-sub .item .val { font-size: 1.05em; font-weight: 800; }
+.earnings-sub .item .label { font-size: 10.5px; font-weight: 700; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.03em; margin-top: 2px; }
+
+/* --- System info chip row --- */
+.sysinfo-row { display: flex; justify-content: center; gap: 10px; }
+.sysinfo-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 7px 14px; border-radius: 999px;
+  background: var(--bg); font-size: 12.5px; font-weight: 700; color: var(--text-dim);
+}
+.sysinfo-chip svg { width: 14px; height: 14px; }
+
+/* --- Quick link card (dashboard -> devices shortcut) --- */
+.quick-link {
+  display: flex; align-items: center; gap: 12px;
+  cursor: pointer;
+}
+.quick-link .count { font-size: 1.8em; font-weight: 800; color: var(--brand); }
+.quick-link .txt { flex: 1; }
+.quick-link .txt .t { font-weight: 700; font-size: 14px; }
+.quick-link .txt .s { font-size: 12px; color: var(--text-dim); }
+.quick-link .chev { width: 18px; height: 18px; color: var(--text-faint); flex-shrink: 0; }
+
+/* --- Filter chips (segmented control) --- */
+.chip-row { display: flex; gap: 6px; margin-bottom: 12px; }
+.chip {
+  flex: 1;
+  padding: 9px 4px;
+  text-align: center;
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text-dim);
+  font-size: 12.5px;
+  font-weight: 700;
+  border: none;
+  cursor: pointer;
+}
+.chip.active { background: var(--brand); color: #fff; }
+
+/* --- Generic list row --- */
+.list-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+}
+.list-row:last-child { border-bottom: none; }
+.list-row.tappable { cursor: pointer; }
+.list-row .row-main { flex: 1; min-width: 0; }
+.list-row .row-title { font-weight: 700; font-size: 13.5px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.list-row .row-sub { font-size: 12px; color: var(--text-dim); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.list-row .row-meta { font-size: 11.5px; color: var(--text-faint); font-weight: 600; white-space: nowrap; flex-shrink: 0; }
+.list-row .row-amt { font-weight: 800; color: var(--brand); font-size: 14px; white-space: nowrap; }
+.list-row .chev { width: 18px; height: 18px; color: var(--text-faint); flex-shrink: 0; }
+.list-row .row-icon {
+  width: 34px; height: 34px; border-radius: 50%;
+  background: var(--bg); color: var(--text-dim);
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+.list-row .row-icon svg { width: 17px; height: 17px; }
+.list-row.danger .row-title { color: var(--danger); }
+.list-row.danger .row-icon { background: rgba(220, 38, 38, 0.1); color: var(--danger); }
+
+/* --- Device detail --- */
+.device-title { text-align: center; margin-bottom: 4px; }
+.device-title .mac { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-weight: 800; font-size: 1.15em; letter-spacing: 0.02em; }
+.device-title .host { font-size: 12.5px; color: var(--text-dim); margin-top: 2px; }
+
+.action-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 14px; }
+.action-grid .btn { padding: 13px 8px; font-size: 13.5px; }
+
+/* --- Modal --- */
+.modal-backdrop {
+  position: fixed; inset: 0; z-index: 500;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex; align-items: flex-end;
+  visibility: hidden; opacity: 0;
+  transition: opacity 0.2s ease, visibility 0s linear 0.2s;
+}
+.modal-backdrop.open {
+  visibility: visible; opacity: 1;
+  transition: opacity 0.2s ease;
+}
+.modal-box {
+  width: 100%;
+  max-width: 480px;
+  margin: 0 auto;
+  background: var(--bg-elevated);
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  padding: 22px 20px calc(env(safe-area-inset-bottom) + 22px);
+  transform: translateY(100%);
+  transition: transform 0.25s cubic-bezier(.32,.72,0,1);
+}
+.modal-backdrop.open .modal-box { transform: translateY(0); }
+.modal-box h2 { font-size: 1.05em; font-weight: 700; margin-bottom: 4px; }
+.modal-box p.desc { font-size: 13px; color: var(--text-dim); margin-bottom: 16px; }
+.modal-actions { display: flex; gap: 8px; margin-top: 4px; }
+.modal-actions .btn { margin-top: 0; }
+
+/* --- Rate editor --- */
+.rate-edit-row { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; }
+.rate-edit-row input { flex: 1; }
+.rate-edit-row .rm-btn {
+  width: 40px; height: 40px; flex-shrink: 0;
+  border-radius: var(--radius-sm);
+  background: rgba(220, 38, 38, 0.1); color: var(--danger);
+  border: none; display: flex; align-items: center; justify-content: center; cursor: pointer;
+}
+.rate-edit-row .rm-btn svg { width: 16px; height: 16px; }
+
+.empty-state.small { padding: 24px 12px; }
