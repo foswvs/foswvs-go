@@ -6,17 +6,18 @@ import (
 	"path/filepath"
 )
 
-// Config holds the GPIO pin assignments for the coin acceptor. Persisted so
-// an admin can remap pins from the dashboard if the factory default wiring
-// doesn't match a given board/build, without touching the binary.
+// Config holds the GPIO pin assignments and coin detection settings for the coin acceptor.
+// Persisted so an admin can remap pins and tune detection from the dashboard without
+// touching the binary.
 type Config struct {
-	SlotPin   int `json:"slot_pin"`
-	SensorPin int `json:"sensor_pin"`
+	SlotPin    int `json:"slot_pin"`
+	SensorPin  int `json:"sensor_pin"`
+	DebounceMS int `json:"debounce_ms"`
 }
 
-// DefaultConfig returns the factory-default pin assignments.
+// DefaultConfig returns the factory-default pin assignments and settings.
 func DefaultConfig() Config {
-	return Config{SlotPin: 2, SensorPin: 17}
+	return Config{SlotPin: 2, SensorPin: 17, DebounceMS: 88}
 }
 
 func configPath(dataDir string) string {
@@ -33,6 +34,9 @@ func LoadConfig(dataDir string) Config {
 	var cfg Config
 	if err := json.Unmarshal(data, &cfg); err != nil || cfg.SlotPin <= 0 || cfg.SensorPin <= 0 {
 		return DefaultConfig()
+	}
+	if cfg.DebounceMS <= 0 || cfg.DebounceMS > 1000 {
+		cfg.DebounceMS = 88
 	}
 	return cfg
 }

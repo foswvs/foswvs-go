@@ -5,11 +5,15 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
+
+	_ "net/http/pprof"
 
 	"github.com/foswvs/foswvs-go/internal/auth"
 	"github.com/foswvs/foswvs-go/internal/bandwidth"
@@ -29,18 +33,51 @@ var _ handlers.CoinAcceptor = (*gpio.DevCoinslot)(nil)
 var _ handlers.Firewall = (*iptables.IPT)(nil)
 var _ handlers.CoinAcceptor = (*gpio.Coinslot)(nil)
 
+// detectActiveInterface finds the first active non-loopback network interface,
+// preferring ethernet (eth*) over wireless (wlan*, wl*) interfaces.
+func detectActiveInterface() string {
+	interfaces, err := net.Interfaces()
+	if err != nil {
+		return "wlan0" // fallback to default
+	}
+
+	// First pass: look for ethernet interfaces
+	for _, iface := range interfaces {
+		if strings.HasPrefix(iface.Name, "eth") {
+			return iface.Name
+		}
+	}
+
+	// Second pass: look for wireless interfaces
+	for _, iface := range interfaces {
+		if strings.HasPrefix(iface.Name, "wlan") || strings.HasPrefix(iface.Name, "wl") {
+			return iface.Name
+		}
+	}
+
+	// Fallback to first available interface
+	for _, iface := range interfaces {
+		if iface.Name != "lo" {
+			return iface.Name
+		}
+	}
+
+	return "wlan0" // ultimate fallback
+}
+
 func main() {
 	var (
-		addr    = flag.String("addr", ":80", "HTTP listen address")
-		tlsAddr = flag.String("tls-addr", ":443", "HTTPS listen address")
-		dataDir = flag.String("data-dir", "/home/pi/foswvs-go", "Data directory for DB, certs, config")
-		webDir  = flag.String("web-dir", "", "Static web files directory (empty = embedded)")
-		certF   = flag.String("tls-cert", "", "TLS certificate file")
-		keyF    = flag.String("tls-key", "", "TLS key file")
-		iface   = flag.String("iface", "wlan0", "Wireless interface name")
-		dspeed  = flag.Int("dspeed", 0, "Download speed limit in Kbps (0=unlimited)")
-		uspeed  = flag.Int("uspeed", 0, "Upload speed limit in Kbps (0=unlimited)")
-		version = flag.Bool("version", false, "Print version and exit")
+		addr      = flag.String("addr", ":80", "HTTP listen address")
+		tlsAddr   = flag.String("tls-addr", ":443", "HTTPS listen address")
+		dataDir   = flag.String("data-dir", "/home/pi/foswvs-go", "Data directory for DB, certs, config")
+		webDir    = flag.String("web-dir", "", "Static web files directory (empty = embedded)")
+		certF     = flag.String("tls-cert", "", "TLS certificate file")
+		keyF      = flag.String("tls-key", "", "TLS key file")
+		iface     = flag.String("iface", "wlan0", "Wireless interface name")
+		dspeed    = flag.Int("dspeed", 0, "Download speed limit in Kbps (0=unlimited)")
+		uspeed    = flag.Int("uspeed", 0, "Upload speed limit in Kbps (0=unlimited)")
+		pprofAddr = flag.String("pprof-addr", ":6060", "pprof profiling listen address (set to empty to disable)")
+		version   = flag.Bool("version", false, "Print version and exit")
 	)
 	flag.Parse()
 
@@ -50,6 +87,15 @@ func main() {
 	}
 
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
+
+	// Auto-detect active LAN interface if not explicitly set
+	if *iface == "wlan0" {
+		activeIface := detectActiveInterface()
+		if activeIface != "wlan0" {
+			log.Printf("auto-detected network interface: %s", activeIface)
+			iface = &activeIface
+		}
+	}
 
 	devMode := os.Getenv("FOSWVS_DEV") == "1"
 	if devMode {
@@ -77,8 +123,36 @@ func main() {
 		ipt = iptables.New()
 		coinslot = gpio.NewCoinslot(gpioCfg.SlotPin, gpioCfg.SensorPin)
 	}
+	coinslot.SetDebounceDelay(time.Duration(gpioCfg.DebounceMS) * time.Millisecond)
 
 	net := network.New(*iface)
+
+	// Configure DHCP lease monitoring mode (hook or file_poll)
+	// Default is hook mode; set FOSWVS_DHCP_MODE=file_poll to use file polling instead
+	dhcpMode := os.Getenv("FOSWVS_DHCP_MODE")
+	if dhcpMode == "file_poll" {
+		net.SetLeaseMonitorMode(network.FilePollMode)
+		log.Println("DHCP monitoring: file_poll mode (polling dhcpd.leases)")
+	} else {
+		net.SetLeaseMonitorMode(network.HookMode)
+		log.Println("DHCP monitoring: hook mode (dhcpd hook callback)")
+
+		// Generate random authentication token for hook security
+		if _, err := net.GenerateDHCPHookToken(); err != nil {
+			log.Fatalf("failed to generate DHCP hook token: %v", err)
+		}
+
+		// Write token to file for hook script to read
+		if err := net.WriteDHCPHookToken(*dataDir); err != nil {
+			log.Printf("warning: failed to write hook token file: %v", err)
+		}
+
+		// Ensure dhcpd.conf has the hook configured
+		if err := network.EnsureDHCPConfigWithHook(*dataDir); err != nil {
+			log.Printf("warning: failed to ensure dhcpd hook in config: %v", err)
+		}
+	}
+
 	sessions := auth.NewSessionStore()
 	hub := ws.NewHub()
 
@@ -90,12 +164,17 @@ func main() {
 	}
 
 	// --- Bandwidth shaper (skip in dev mode) ---
-	if !devMode && (*dspeed > 0 || *uspeed > 0) {
-		bw := bandwidth.New(*iface)
-		if err := bw.Apply(*dspeed, *uspeed); err != nil {
-			log.Printf("bandwidth shaper: %v", err)
+	var bw *bandwidth.Shaper
+	if !devMode {
+		bw = bandwidth.NewWithConfig(*iface, *dataDir)
+		if *dspeed > 0 || *uspeed > 0 {
+			if err := bw.Apply(*dspeed, *uspeed); err != nil {
+				log.Printf("bandwidth shaper: %v", err)
+			}
 		}
 		defer bw.Clear()
+	} else {
+		bw = bandwidth.NewWithConfig(*iface, *dataDir)
 	}
 
 	// --- Build handler ---
@@ -111,9 +190,24 @@ func main() {
 		DevMode:     devMode,
 		JWTSecret:   deviceTokenSecret,
 		Maintenance: handlers.NewMaintenanceState(*dataDir),
+		Shaper:      bw,
 	}
 
 	mux := app.Routes()
+
+	// --- Start pprof profiling server (optional) ---
+	if *pprofAddr != "" {
+		pprofSrv := &http.Server{
+			Addr:    *pprofAddr,
+			Handler: http.DefaultServeMux, // pprof handlers auto-registered by _ "net/http/pprof"
+		}
+		go func() {
+			log.Printf("pprof profiling available at http://localhost%s/debug/pprof/", *pprofAddr)
+			if err := pprofSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				log.Printf("pprof: %v", err)
+			}
+		}()
+	}
 
 	// --- Start background goroutines ---
 	ctx, cancel := context.WithCancel(context.Background())
@@ -122,7 +216,8 @@ func main() {
 	// 1. WebSocket hub
 	go hub.Run(ctx)
 
-	// 2. DHCP lease watcher — polls ARP table, registers new devices
+	// 2. DHCP lease monitoring (hook or file polling)
+	net.StartHookListener(ctx)
 	go app.DHCPWatcher(ctx, net)
 
 	// 3. Iptables byte counter poller — tracks data usage, kicks exhausted clients

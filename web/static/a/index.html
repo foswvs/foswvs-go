@@ -5,7 +5,14 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0d9488" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#0d0f14" media="(prefers-color-scheme: dark)">
+<meta name="description" content="PisoWiFi Admin Dashboard - Manage your WiFi vendo system.">
+<meta name="apple-mobile-web-app-capable" content="true">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="PisoWiFi Admin">
 <link rel="shortcut icon" href="/favicon.ico" type="image/x-icon">
+<link rel="icon" href="/favicon.ico" type="image/x-icon">
+<link rel="apple-touch-icon" href="/icons/icon-192x192.png">
+<link rel="manifest" href="/manifest.json">
 <link rel="stylesheet" href="/css/portal.css">
 <link rel="stylesheet" href="/css/admin.css">
 <title>Admin &mdash; PisoWiFi</title>
@@ -115,6 +122,9 @@
         <button class="chip" id="chip-restricted" data-filter="restricted">Restricted</button>
       </div>
       <div class="card">
+        <div style="margin-bottom:16px;">
+          <input type="text" id="device-search" placeholder="Search by IP, MAC, or hostname..." style="width:100%; padding:10px; border:1px solid var(--border); border-radius:6px; background:var(--bg-elevated); color:var(--text); font-size:14px;">
+        </div>
         <div id="device-list"></div>
       </div>
     </section>
@@ -180,6 +190,16 @@
           <div class="row-main"><div class="row-title" style="font-family:inherit;">Coinslot GPIO Pins</div></div>
           <svg class="chev" viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
         </div>
+        <div class="list-row tappable" id="row-traffic">
+          <div class="row-icon"><svg viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg></div>
+          <div class="row-main"><div class="row-title" style="font-family:inherit;">Traffic Control</div></div>
+          <svg class="chev" viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+        </div>
+        <div class="list-row tappable" id="row-network">
+          <div class="row-icon"><svg viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"/><path d="M20.27 20.27A9 9 0 0 1 3.73 3.73 9 9 0 0 1 20.27 20.27"/><path d="M12 3v9m0 0v9"/></svg></div>
+          <div class="row-main"><div class="row-title" style="font-family:inherit;">Network Configuration</div></div>
+          <svg class="chev" viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+        </div>
         <div class="list-row tappable" id="row-maintenance">
           <div class="row-icon"><svg viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94z"/></svg></div>
           <div class="row-main">
@@ -234,7 +254,82 @@
           <label for="gpio-sensor">Sensor pin (enable/disable output)</label>
           <input type="number" id="gpio-sensor" placeholder="e.g. 17" inputmode="numeric">
         </div>
-        <button class="btn btn-primary" id="btn-save-gpio">SAVE PINS</button>
+        <div class="field">
+          <label for="gpio-debounce">Coin debounce delay (ms)</label>
+          <input type="number" id="gpio-debounce" placeholder="e.g. 88" inputmode="numeric">
+          <p class="hint" style="margin-top:8px; font-size:12px;">Delay after detecting a coin to prevent duplicate reads. Increase if experiencing inaccurate coin counts.</p>
+        </div>
+        <button class="btn btn-primary" id="btn-save-gpio">SAVE SETTINGS</button>
+      </div>
+    </section>
+
+    <!-- ===== Traffic Control (drill-in from Settings) ===== -->
+    <section class="view" id="view-traffic" style="display:none;">
+      <div class="card">
+        <h2 style="margin-bottom:8px;">Traffic Control</h2>
+        <p class="hint" style="margin-bottom:20px;">Bandwidth is automatically divided equally among connected users. The queue algorithm determines how fairly traffic is distributed.</p>
+
+        <!-- Network Interface Selection -->
+        <h3 style="margin-bottom:12px; font-size:14px; font-weight:600;">Target Network Interface</h3>
+        <div id="traffic-interface-selector" style="margin-bottom:20px; padding:12px; background:var(--bg-elevated); border-radius:8px; border:2px solid var(--border);">
+          <div style="font-size:12px; color:var(--text-dim); margin-bottom:8px;">Select the network interface to apply traffic shaping</div>
+          <div id="traffic-interface-list" style="display:flex; flex-direction:column; gap:6px;"></div>
+        </div>
+
+        <div id="traffic-stats" style="margin-bottom:24px; padding:16px; background:var(--bg-elevated); border-radius:8px;">
+          <div class="info-list">
+            <div class="row"><span class="label">Active Users</span><span class="value" id="traffic-active-count">0</span></div>
+            <div class="row"><span class="label">Per-User Limit</span><span class="value" id="traffic-dynamic-limit">0 Mbps</span></div>
+          </div>
+        </div>
+
+        <!-- Queue Discipline Selection -->
+        <h3 style="margin-bottom:12px; font-size:14px; font-weight:600;">Queue Algorithm</h3>
+        <div style="display:flex; gap:8px; margin-bottom:20px;">
+          <button class="qdisc-btn" data-qdisc="cake" type="button" style="flex:1; padding:12px; border:2px solid var(--border); background:var(--bg-elevated); border-radius:6px; cursor:pointer; font-size:14px; font-weight:500; color:var(--text); transition:all 0.2s; outline:none; -webkit-appearance:none; -moz-appearance:none; appearance:none;" onmouseover="this.style.opacity='0.8'" onmouseout="this.style.opacity='1'">
+            <div style="font-weight:600; margin-bottom:4px;">CAKE</div>
+            <div style="font-size:12px; color:var(--text-dim);">Modern, fair</div>
+          </button>
+          <button class="qdisc-btn" data-qdisc="htb" type="button" style="flex:1; padding:12px; border:2px solid var(--border); background:var(--bg-elevated); border-radius:6px; cursor:pointer; font-size:14px; font-weight:500; color:var(--text); transition:all 0.2s; outline:none; -webkit-appearance:none; -moz-appearance:none; appearance:none;" onmouseover="this.style.opacity='0.8'" onmouseout="this.style.opacity='1'">
+            <div style="font-weight:600; margin-bottom:4px;">HTB</div>
+            <div style="font-size:12px; color:var(--text-dim);">Traditional</div>
+          </button>
+        </div>
+        <p class="hint" style="margin-bottom:20px; font-size:12px;">
+          <strong>CAKE:</strong> Better per-user fairness, simpler to configure. Handles bufferbloat automatically.<br>
+          <strong>HTB:</strong> More granular control, familiar to advanced users.
+        </p>
+
+        <div class="field">
+          <label for="traffic-total-bandwidth">Total Available Bandwidth (Mbps)</label>
+          <input type="number" id="traffic-total-bandwidth" placeholder="e.g. 100" inputmode="numeric" min="1" max="10000">
+          <p class="hint" style="margin-top:8px; font-size:12px;">Your total internet connection speed. Set this to your actual ISP bandwidth for best results.</p>
+        </div>
+
+        <div class="field">
+          <label for="traffic-max-dynamic-limit">Maximum Per-User Limit (Mbps)</label>
+          <input type="number" id="traffic-max-dynamic-limit" placeholder="e.g. 50" inputmode="numeric" min="1" max="1000">
+          <p class="hint" style="margin-top:8px; font-size:12px;">No single user will exceed this speed, even if few people are connected. Prevents bandwidth hogging.</p>
+        </div>
+
+        <!-- CAKE-specific options -->
+        <div id="traffic-cake-options" style="display:none;">
+          <div class="field">
+            <label for="traffic-overhead">Frame Overhead Bytes</label>
+            <input type="number" id="traffic-overhead" placeholder="38" inputmode="numeric" min="0" max="256" value="38">
+            <p class="hint" style="margin-top:8px; font-size:12px;">
+              Ethernet: 38 bytes (default) • PPPoE: 6 additional bytes • VLAN: 4 additional bytes
+            </p>
+          </div>
+
+          <label style="display:flex; align-items:center; gap:10px; cursor:pointer; margin-bottom:16px;">
+            <input type="checkbox" id="traffic-enable-ingress" style="width:18px; height:18px; cursor:pointer;">
+            <span style="font-size:14px; color:var(--text);">Apply to download traffic</span>
+          </label>
+          <p class="hint" style="margin-bottom:16px; font-size:12px;">When enabled, shapes incoming (download) traffic using IFB device. Helps with fair download sharing.</p>
+        </div>
+
+        <button class="btn btn-primary" id="btn-save-traffic" style="width:100%;">SAVE SETTINGS</button>
       </div>
     </section>
 
@@ -258,6 +353,146 @@
 
         <button class="btn btn-primary" id="btn-save-maintenance">SAVE</button>
       </div>
+    </section>
+
+    <!-- ===== Network Configuration (drill-in from Settings) ===== -->
+    <section class="view" id="view-network" style="display:none;">
+      <!-- Tab Navigation -->
+      <div style="display:flex; gap:0; margin-bottom:20px; border-bottom:1px solid var(--border); overflow-x:auto; background:var(--bg-elevated); border-radius:8px 8px 0 0; box-shadow:0 1px 0 var(--border) inset;">
+        <button class="net-tab-btn" data-tab="lan" style="padding:12px 20px; background:none; border:none; border-right:1px solid var(--border); color:var(--text-dim); font-size:14px; font-weight:600; cursor:pointer; border-bottom:3px solid transparent; transition:all 0.2s; flex-shrink:0; position:relative; letter-spacing:0.5px; white-space:nowrap;">
+          LAN
+        </button>
+        <button class="net-tab-btn" data-tab="wan" style="padding:12px 20px; background:none; border:none; border-right:1px solid var(--border); color:var(--text-dim); font-size:14px; font-weight:600; cursor:pointer; border-bottom:3px solid transparent; transition:all 0.2s; flex-shrink:0; position:relative; letter-spacing:0.5px; white-space:nowrap;">
+          WAN
+        </button>
+        <button class="net-tab-btn" data-tab="wlan" style="padding:12px 20px; background:none; border:none; color:var(--text-dim); font-size:14px; font-weight:600; cursor:pointer; border-bottom:3px solid transparent; transition:all 0.2s; flex-shrink:0; position:relative; letter-spacing:0.5px; white-space:nowrap;">
+          WiFi
+        </button>
+      </div>
+
+      <!-- LAN Tab -->
+      <div id="net-tab-lan" class="net-tab-content" style="display:block;">
+        <div class="card">
+          <h2>LAN Configuration</h2>
+          <p class="hint">Configure DHCP server, DNS, and local network settings.</p>
+
+          <!-- Interface Selection -->
+          <div id="net-iface-selection" style="margin-bottom:24px;">
+            <div style="font-size:12px; color:var(--brand); margin-bottom:12px; text-transform:uppercase; font-weight:600; letter-spacing:0.5px;">Select Interface</div>
+            <div id="net-lan-interfaces" style="margin-bottom:16px;"></div>
+          </div>
+
+          <!-- Selected Configuration (shown only after selection) -->
+          <div id="net-lan-config" style="display:none;">
+            <!-- Interface Details (Expandable) -->
+            <div style="margin-bottom:20px; padding:12px; background:var(--bg); border-radius:8px; border-left:3px solid var(--brand);">
+              <button id="net-expand-details" style="width:100%; background:none; border:none; display:flex; align-items:center; justify-content:space-between; cursor:pointer; padding:0; font-size:14px; font-weight:600; color:var(--text);">
+                <span>Interface Details</span>
+                <span style="font-size:16px; transition:transform 0.2s;">▼</span>
+              </button>
+              <div id="net-details-content" style="display:none; margin-top:12px; padding-top:12px; border-top:1px solid var(--border); font-size:12px; color:var(--text-dim); line-height:1.8;">
+                <div style="margin-bottom:8px;"><strong style="color:var(--text);">Status:</strong> <span id="net-iface-status-detail">-</span></div>
+                <div style="margin-bottom:8px;"><strong style="color:var(--text);">Speed:</strong> <span id="net-iface-speed-detail">-</span></div>
+                <div style="margin-bottom:8px;"><strong style="color:var(--text);">MAC:</strong> <span style="font-family:monospace; font-size:11px;" id="net-iface-mac-detail">-</span></div>
+                <div><strong style="color:var(--text);">Current IP:</strong> <span style="font-family:monospace; font-size:11px;" id="net-iface-ip-detail">-</span></div>
+              </div>
+            </div>
+
+            <!-- DHCP Configuration -->
+            <h3 style="margin-top:20px; margin-bottom:12px; font-size:14px; font-weight:600;">DHCP Server</h3>
+          <div class="field">
+            <label for="net-dhcp-start">Range Start</label>
+            <input type="text" id="net-dhcp-start" placeholder="e.g. 10.0.0.10">
+          </div>
+          <div class="field">
+            <label for="net-dhcp-end">Range End</label>
+            <input type="text" id="net-dhcp-end" placeholder="e.g. 10.0.0.250">
+          </div>
+          <div class="field">
+            <label for="net-dhcp-netmask">Subnet Mask</label>
+            <input type="text" id="net-dhcp-netmask" placeholder="e.g. 255.255.255.0">
+          </div>
+          <div class="field">
+            <label for="net-dhcp-broadcast">Broadcast Address</label>
+            <input type="text" id="net-dhcp-broadcast" placeholder="e.g. 10.0.0.255">
+          </div>
+
+            <!-- DNS Configuration -->
+            <h3 style="margin-top:20px; margin-bottom:12px; font-size:14px; font-weight:600;">DNS Servers</h3>
+            <div id="net-dns-list" style="margin-bottom:12px;"></div>
+            <button class="btn btn-secondary" id="btn-add-dns" style="width:100%;">+ ADD DNS SERVER</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- WAN Tab -->
+      <div id="net-tab-wan" class="net-tab-content" style="display:none;">
+        <div class="card">
+          <h2>WAN Configuration</h2>
+          <p class="hint">View your internet connection interface (auto-detected).</p>
+
+          <div id="net-wan-info" style="display:none; padding:16px; background:var(--bg); border-radius:8px; border-left:3px solid var(--brand);">
+            <div style="font-size:11px; color:var(--brand); margin-bottom:12px; text-transform:uppercase; font-weight:600; letter-spacing:0.5px;">WAN INTERFACE</div>
+            <div style="font-size:18px; font-weight:600; color:var(--text); margin-bottom:12px;" id="net-wan-interface">-</div>
+            <div style="font-size:13px; color:var(--text-dim); margin-bottom:16px;">Internet connection via this interface (read-only)</div>
+
+            <div style="padding:12px; background:var(--bg-elevated); border-radius:6px; border:1px solid var(--border); font-size:12px; color:var(--text-dim); line-height:1.8;">
+              <div style="margin-bottom:8px;"><strong style="color:var(--text);">Status:</strong> <span id="net-wan-status" style="color:var(--brand); font-weight:600;">-</span></div>
+              <div style="margin-bottom:8px;"><strong style="color:var(--text);">Speed:</strong> <span id="net-wan-speed">-</span></div>
+              <div style="margin-bottom:8px;"><strong style="color:var(--text);">MAC:</strong> <span style="font-family:monospace; font-size:11px;" id="net-wan-mac">-</span></div>
+              <div><strong style="color:var(--text);">IP Address:</strong> <span style="font-family:monospace; font-size:11px;" id="net-wan-ip">-</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- WLAN Tab -->
+      <div id="net-tab-wlan" class="net-tab-content" style="display:none;">
+        <div class="card">
+          <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:16px;">
+            <h2 style="margin:0;">WiFi Access Point</h2>
+            <label id="net-hostapd-label" style="display:flex; align-items:center; gap:10px; cursor:pointer; font-size:14px; color:var(--text);">
+              <input type="checkbox" id="net-hostapd-enabled" style="cursor:pointer; width:18px; height:18px;">
+              <span id="net-hostapd-status-label">Enable WiFi</span>
+            </label>
+          </div>
+          <p class="hint">Configure WiFi broadcast settings for your access point.</p>
+
+          <div id="net-hostapd-fields" style="display:none;">
+            <div class="field">
+              <label for="net-hostapd-ssid">Network Name (SSID)</label>
+              <input type="text" id="net-hostapd-ssid" placeholder="e.g. PisoWiFi" maxlength="32">
+            </div>
+
+            <div class="field">
+              <label for="net-hostapd-channel">WiFi Channel</label>
+              <input type="number" id="net-hostapd-channel" min="1" max="165" placeholder="e.g. 7">
+              <p class="hint" style="font-size:12px; margin-top:4px;">2.4GHz: 1-13, 5GHz: 36-165</p>
+            </div>
+
+            <div class="field">
+              <label for="net-hostapd-mode">WiFi Standard</label>
+              <select id="net-hostapd-mode" style="width:100%; padding:8px; border:1px solid var(--border); border-radius:4px; background:var(--bg-elevated); color:var(--text);">
+                <option value="g">802.11g (2.4GHz, 54Mbps)</option>
+                <option value="n">802.11n (2.4/5GHz, 300Mbps)</option>
+                <option value="a">802.11a (5GHz, 54Mbps)</option>
+                <option value="ac">802.11ac (5GHz, 867Mbps)</option>
+                <option value="ax">802.11ax (WiFi 6, 2.4/5GHz)</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Save Button -->
+      <div style="margin-top:24px; padding-top:16px; border-top:1px solid var(--border);">
+        <button class="btn btn-primary" id="btn-save-network" style="width:100%;">SAVE SETTINGS</button>
+      </div>
+
+      <!-- Legacy fields (hidden but preserved for backwards compatibility) -->
+      <input type="hidden" id="net-iface-ip">
+      <input type="hidden" id="net-iface-netmask">
+      <input type="hidden" id="net-gateway">
     </section>
 
   </main>
@@ -311,10 +546,38 @@
   </div>
 </div>
 
+<!-- Service Worker Registration -->
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js', { scope: '/' })
+      .then(reg => {
+        console.log('ServiceWorker registered:', reg);
+        // Check for updates periodically
+        setInterval(() => reg.update(), 60000);
+      })
+      .catch(err => console.log('ServiceWorker registration failed:', err));
+  });
+}
+</script>
+
 <script src="/js/portal.js"></script>
 <script>
 const $ = id => document.getElementById(id);
 const peso = n => '₱' + Math.round(parseFloat(n) || 0).toLocaleString();
+
+// Prevent double-clicks on buttons during async operations
+function withClickLock(btn, fn) {
+  return async function(...args) {
+    if (btn.disabled) return;
+    btn.disabled = true;
+    try {
+      return await fn.apply(this, args);
+    } finally {
+      btn.disabled = false;
+    }
+  };
+}
 
 let ws, currentFilter = 'active', currentMAC = '', txnOffset = 0, loggingOut = false;
 
@@ -345,8 +608,8 @@ async function doLogout() {
   location.reload();
 }
 
-$('btn-login').addEventListener('click', doLogin);
-$('pwd').addEventListener('keyup', e => { if (e.key === 'Enter') doLogin(); });
+$('btn-login').addEventListener('click', withClickLock($('btn-login'), doLogin));
+$('pwd').addEventListener('keyup', e => { if (e.key === 'Enter') withClickLock($('btn-login'), doLogin)(); });
 
 // --- Dashboard shell ---
 function showDash() {
@@ -403,18 +666,18 @@ function renderMaintenanceBanner(mc) {
   $('maintenance-banner').style.display = active ? '' : 'none';
   $('maintenance-badge').style.display = active ? '' : 'none';
   if (mc.mode === 'lockdown') {
-    $('maintenance-banner-sub').textContent = 'Portal locked down — tap to review';
+    $('maintenance-banner-sub').textContent = 'Portal locked down - tap to review';
   } else if (mc.mode === 'free') {
-    $('maintenance-banner-sub').textContent = `Free access enabled — up to ${Portal.formatMB(mc.free_mb)} per device`;
+    $('maintenance-banner-sub').textContent = `Free access enabled - up to ${Portal.formatMB(mc.free_mb)} per device`;
   }
 }
 
 // --- Tab / drill-in routing ---
 const TITLES = { dashboard: 'Dashboard', devices: 'Devices', txn: 'Transactions', settings: 'Settings',
                  'device-detail': 'Device', rates: 'Rates', password: 'Change Password', gpio: 'GPIO Pins',
-                 maintenance: 'Maintenance Mode' };
+                 traffic: 'Traffic Control', maintenance: 'Maintenance Mode', network: 'Network Configuration' };
 const TABS = ['dashboard', 'devices', 'txn', 'settings'];
-const ALL_VIEWS = TABS.concat(['device-detail', 'rates', 'password', 'gpio', 'maintenance']);
+const ALL_VIEWS = TABS.concat(['device-detail', 'rates', 'password', 'gpio', 'traffic', 'network', 'maintenance']);
 let currentView = 'dashboard';
 let drillParent = 'devices';
 const topbar = $('topbar'), topbarTitle = $('topbar-title'), btnBack = $('btn-back');
@@ -434,6 +697,8 @@ function showView(name) {
   if (name === 'txn') { txnOffset = 0; loadTxn(true); }
   if (name === 'rates') loadRates();
   if (name === 'gpio') loadGPIO();
+  if (name === 'traffic') loadTrafficControl();
+  if (name === 'network') loadNetworkConfig();
   if (name === 'maintenance') loadMaintenance();
 
   window.scrollTo(0, 0);
@@ -447,10 +712,12 @@ $('quick-active').addEventListener('click', () => { selectFilter('active'); show
 $('maintenance-banner').addEventListener('click', () => { drillParent = 'dashboard'; showView('maintenance'); });
 
 // --- Devices ---
+let allDevices = [];
+
 function selectFilter(filter) {
   currentFilter = filter;
   document.querySelectorAll('.chip').forEach(c => c.classList.toggle('active', c.dataset.filter === filter));
-  // Only reload here if we're already on the Devices tab — showView('devices')
+  // Only reload here if we're already on the Devices tab - showView('devices')
   // triggers its own load, so callers navigating in from elsewhere (e.g. the
   // dashboard's "Devices Online" shortcut) don't double-fetch.
   if (currentView === 'devices') loadDevices(currentFilter);
@@ -459,18 +726,36 @@ document.querySelectorAll('.chip').forEach(chip => {
   chip.addEventListener('click', () => selectFilter(chip.dataset.filter));
 });
 
+$('device-search').addEventListener('input', () => {
+  renderDevices(allDevices);
+});
+
 async function loadDevices(filter) {
   const r = await fetch('/api/admin/devices?filter=' + filter);
-  renderDevices(await r.json());
+  allDevices = await r.json();
+  renderDevices(allDevices);
+}
+
+function filterDevicesBySearch(devs, searchTerm) {
+  if (!searchTerm.trim()) return devs;
+  const term = searchTerm.toLowerCase();
+  return devs.filter(d =>
+    (d.mac && d.mac.toLowerCase().includes(term)) ||
+    (d.ip && d.ip.toLowerCase().includes(term)) ||
+    (d.host && d.host.toLowerCase().includes(term))
+  );
 }
 
 function renderDevices(devs) {
   const el = $('device-list');
-  if (!devs || devs.length === 0) {
+  const searchTerm = $('device-search').value;
+  const filtered = filterDevicesBySearch(devs, searchTerm);
+
+  if (!filtered || filtered.length === 0) {
     el.innerHTML = '<div class="empty-state small">No devices</div>';
     return;
   }
-  el.innerHTML = devs.map(d => `
+  el.innerHTML = filtered.map(d => `
     <div class="list-row tappable" data-mac="${d.mac}">
       <div class="row-icon"><svg viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="2" width="10" height="20" rx="2"/><line x1="11" y1="18" x2="13" y2="18"/></svg></div>
       <div class="row-main">
@@ -510,21 +795,42 @@ async function showDevice(mac, parent) {
   const tr = await fetch('/api/admin/txn?mac=' + encodeURIComponent(mac));
   const sessions = await tr.json();
   $('dd-sessions-empty').style.display = (!sessions || sessions.length === 0) ? 'block' : 'none';
-  $('dd-sessions').innerHTML = (sessions || []).map(s => `
-    <div class="list-row">
+  const sessionsHtml = (sessions || []).map(s => `
+    <div class="list-row" data-session-id="${s.id}">
       <div class="row-main">
         <div class="row-title" style="font-family:inherit;">${Portal.formatMB(s.mb_limit)}</div>
         <div class="row-sub">${Portal.formatMB(s.mb_used)} used</div>
       </div>
       <div class="row-amt">${peso(s.amt)}</div>
       <div class="row-meta">${shortDate(s.ts)}</div>
+      <button class="del-session-btn" data-session-id="${s.id}" style="background:none; border:none; cursor:pointer; padding:4px 8px; color:var(--text-dim); transition:color 0.2s;" title="Delete session">
+        <svg viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:18px; height:18px;"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
+      </button>
     </div>
   `).join('');
+  $('dd-sessions').innerHTML = sessionsHtml;
+
+  // Add delete event listeners
+  $('dd-sessions').querySelectorAll('.del-session-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const sessionId = btn.dataset.sessionId;
+      confirmAction('Delete this session?', `${Portal.formatMB(sessions.find(s => s.id == sessionId).mb_limit)} will be removed.`, async () => {
+        const r = await fetch(`/api/admin/del_session?sid=${sessionId}`);
+        if (r.ok) {
+          Portal.toast('Session deleted', true);
+          showDevice(currentMAC);
+        } else {
+          Portal.toast('Failed to delete session', false);
+        }
+      });
+    });
+  });
 }
 
 $('btn-add-mb').addEventListener('click', () => openModal('modal-addmb'));
 $('addmb-cancel').addEventListener('click', () => closeModal('modal-addmb'));
-$('addmb-confirm').addEventListener('click', async () => {
+$('addmb-confirm').addEventListener('click', withClickLock($('addmb-confirm'), async () => {
   const mb = $('addmb-input').value;
   if (!mb || isNaN(mb) || Number(mb) <= 0) { Portal.toast('Enter a valid amount', false); return; }
   await fetch(`/api/admin/add_session?mac=${encodeURIComponent(currentMAC)}&limit=${mb}`);
@@ -532,10 +838,10 @@ $('addmb-confirm').addEventListener('click', async () => {
   $('addmb-input').value = '';
   Portal.toast('Added ' + Portal.formatMB(parseFloat(mb)), true);
   showDevice(currentMAC);
-});
+}));
 
 $('btn-clear-mb').addEventListener('click', () => {
-  confirmAction('Clear all data?', 'This resets the device’s usage and balance to zero.', async () => {
+  confirmAction('Clear all data?', "This resets the device's usage and balance to zero.", async () => {
     await fetch(`/api/admin/clear_mb?mac=${encodeURIComponent(currentMAC)}`);
     Portal.toast('Data cleared', true);
     showDevice(currentMAC);
@@ -569,7 +875,7 @@ async function loadTxn(reset) {
     </div>
   `).join('');
   // Move (not copy) each new row into the list, attaching a listener only
-  // to what was just added — insertAdjacentHTML would've re-parsed the
+  // to what was just added - insertAdjacentHTML would've re-parsed the
   // whole list on every "Load More" and left earlier rows un-clickable.
   Array.from(wrapper.children).forEach(row => {
     row.addEventListener('click', () => showDevice(row.dataset.mac, 'txn'));
@@ -579,16 +885,18 @@ async function loadTxn(reset) {
   txnOffset += 25;
   $('btn-load-more').style.display = (txns && txns.length === 25) ? '' : 'none';
 }
-$('btn-load-more').addEventListener('click', () => loadTxn(false));
+$('btn-load-more').addEventListener('click', withClickLock($('btn-load-more'), async () => loadTxn(false)));
 
 // --- Settings ---
 $('row-rates').addEventListener('click', () => { drillParent = 'settings'; showView('rates'); });
 $('row-password').addEventListener('click', () => { drillParent = 'settings'; showView('password'); });
 $('row-gpio').addEventListener('click', () => { drillParent = 'settings'; showView('gpio'); });
+$('row-traffic').addEventListener('click', () => { drillParent = 'settings'; showView('traffic'); });
+$('row-network').addEventListener('click', () => { drillParent = 'settings'; showView('network'); });
 $('row-maintenance').addEventListener('click', () => { drillParent = 'settings'; showView('maintenance'); });
 $('row-portal').addEventListener('click', () => location.assign('/'));
 $('row-logout').addEventListener('click', () => {
-  confirmAction('Log out?', 'You’ll need your password to sign back in.', doLogout);
+  confirmAction('Log out?', "You'll need your password to sign back in.", doLogout);
 });
 
 // --- Rates ---
@@ -615,7 +923,7 @@ function addRateRow(amt, mb) {
 }
 $('btn-add-rate').addEventListener('click', () => addRateRow());
 
-$('btn-save-rates').addEventListener('click', async () => {
+$('btn-save-rates').addEventListener('click', withClickLock($('btn-save-rates'), async () => {
   const rows = $('rates-list').querySelectorAll('.rate-edit-row');
   const entries = [];
   rows.forEach(row => {
@@ -626,17 +934,17 @@ $('btn-save-rates').addEventListener('click', async () => {
   if (!entries.length) { Portal.toast('Add at least one rate', false); return; }
   await fetch('/api/admin/rates', {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(entries)});
   Portal.toast('Rates saved', true);
-});
+}));
 
 // --- Password ---
-$('btn-change-pwd').addEventListener('click', async () => {
+$('btn-change-pwd').addEventListener('click', withClickLock($('btn-change-pwd'), async () => {
   const p = $('new-pwd').value;
   if (p.length < 3) { Portal.toast('Min 3 characters', false); return; }
   const r = await fetch('/api/admin/password', {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({password:p})});
   if (!r.ok) { Portal.toast('Password update failed', false); return; }
   Portal.toast('Password updated', true);
   $('new-pwd').value = '';
-});
+}));
 
 // --- GPIO ---
 async function loadGPIO() {
@@ -644,30 +952,34 @@ async function loadGPIO() {
   const cfg = await r.json();
   $('gpio-slot').value = cfg.slot_pin;
   $('gpio-sensor').value = cfg.sensor_pin;
+  $('gpio-debounce').value = cfg.debounce_ms || 88;
 }
 
-$('btn-save-gpio').addEventListener('click', async () => {
+$('btn-save-gpio').addEventListener('click', withClickLock($('btn-save-gpio'), async () => {
   const slot = parseInt($('gpio-slot').value, 10);
   const sensor = parseInt($('gpio-sensor').value, 10);
+  const debounce = parseInt($('gpio-debounce').value, 10);
   if (!slot || !sensor || slot <= 0 || sensor <= 0) { Portal.toast('Enter valid pin numbers', false); return; }
   if (slot === sensor) { Portal.toast('Slot and sensor pins must differ', false); return; }
+  if (!debounce || debounce <= 0 || debounce > 1000) { Portal.toast('Debounce delay must be 1-1000ms', false); return; }
 
   const r = await fetch('/api/admin/gpio', {
     method: 'PUT',
     headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({slot_pin: slot, sensor_pin: sensor})
+    body: JSON.stringify({slot_pin: slot, sensor_pin: sensor, debounce_ms: debounce})
   });
   if (!r.ok) {
     const d = await r.json().catch(() => ({}));
     Portal.toast(d.error || 'Save failed', false);
     return;
   }
-  Portal.toast('GPIO pins updated', true);
-});
+  Portal.toast('GPIO settings updated', true);
+  await loadGPIO();
+}));
 
 // --- Maintenance mode ---
 const MAINT_DESC = {
-  off: 'Off — the portal works normally.',
+  off: 'Off - the portal works normally.',
   lockdown: 'All devices are disconnected immediately, and no one can connect or pay until this is turned off.',
   free: 'Devices without a paid balance get free data (once each) up to the limit below. Coin payments are disabled.',
 };
@@ -691,7 +1003,7 @@ async function loadMaintenance() {
   selectMaintMode(cfg.mode || 'off');
 }
 
-$('btn-save-maintenance').addEventListener('click', async () => {
+$('btn-save-maintenance').addEventListener('click', withClickLock($('btn-save-maintenance'), async () => {
   const freeMB = parseFloat($('maint-freemb').value);
   if (selectedMaintMode === 'free' && (!freeMB || freeMB <= 0)) {
     Portal.toast('Enter a valid free data amount', false);
@@ -709,7 +1021,567 @@ $('btn-save-maintenance').addEventListener('click', async () => {
     return;
   }
   Portal.toast('Maintenance settings saved', true);
+}));
+
+// --- Traffic Control ---
+let selectedQdisc = 'cake';
+let selectedTrafficInterface = '';
+
+async function loadTrafficControl() {
+  try {
+    // Load configuration
+    const cfgResp = await fetch('/api/admin/traffic_control');
+    const cfg = await cfgResp.json();
+    $('traffic-max-dynamic-limit').value = cfg.maximum_dynamic_mbps || 50;
+    $('traffic-total-bandwidth').value = cfg.total_bandwidth_mbps || 100;
+    $('traffic-overhead').value = cfg.overhead_bytes || 38;
+    $('traffic-enable-ingress').checked = cfg.enable_ingress !== false;
+    $('traffic-active-count').textContent = cfg.active_users || 0;
+    $('traffic-dynamic-limit').textContent = (cfg.effective_per_ip || 0) + ' Mbps';
+
+    selectedQdisc = cfg.qdisc_type || 'cake';
+    selectedTrafficInterface = cfg.interface_name || '';
+    updateQdiscButtons();
+
+    // Load available interfaces
+    const ifaceResp = await fetch('/api/admin/traffic_control/interfaces');
+    if (ifaceResp.ok) {
+      const interfaces = await ifaceResp.json();
+      renderTrafficControlInterfaces(interfaces);
+    }
+  } catch (err) {
+    console.error('Error loading traffic control:', err);
+  }
+}
+
+function renderTrafficControlInterfaces(interfaces) {
+  const container = $('traffic-interface-list');
+  container.innerHTML = '';
+
+  if (!interfaces || interfaces.length === 0) {
+    container.innerHTML = '<div class="hint" style="margin:0;">No network interfaces with IP addresses found</div>';
+    return;
+  }
+
+  interfaces.forEach(iface => {
+    const isSelected = iface.selected;
+    const isUp = iface.status === 'up';
+    const statusColor = isUp ? 'var(--brand)' : 'var(--text-dim)';
+
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'traffic-iface-btn';
+    btn.dataset.ifaceName = iface.name;
+    btn.dataset.ifaceStatus = iface.status;
+
+    const borderColor = isSelected ? 'var(--brand)' : 'var(--border)';
+    const bgColor = isSelected ? 'rgba(var(--brand-rgb), 0.1)' : 'var(--bg)';
+
+    btn.style.cssText = `
+      display:flex; align-items:center; gap:12px; padding:12px 14px;
+      background:${bgColor}; border:2px solid ${borderColor}; border-radius:6px;
+      cursor:${isUp ? 'pointer' : 'not-allowed'}; transition:all 0.2s; text-align:left;
+      font-size:13px; color:var(--text); font-weight:500;
+      width:100%; -webkit-appearance:none; -moz-appearance:none; appearance:none;
+      outline:none; opacity:${isUp ? '1' : '0.5'};
+    `;
+
+    btn.innerHTML = `
+      <div style="flex-shrink:0; width:8px; height:8px; border-radius:50%; background:${statusColor};"></div>
+      <div style="flex:1; min-width:0;">
+        <div style="font-weight:600; margin-bottom:2px;">${iface.name}</div>
+        <div style="font-size:11px; color:var(--text-dim);">IP: ${iface.ip} • MAC: ${iface.mac}</div>
+      </div>
+      <div style="flex-shrink:0; font-size:16px; color:${isSelected ? 'var(--brand)' : 'transparent'}; transition:color 0.2s;">✓</div>
+    `;
+
+    // Add hover effect
+    btn.addEventListener('mouseover', function() {
+      if (isUp) {
+        this.style.opacity = '0.9';
+        this.style.transform = 'translateY(-1px)';
+        this.style.boxShadow = '0 2px 8px rgba(0,0,0,0.1)';
+      }
+    });
+
+    btn.addEventListener('mouseout', function() {
+      this.style.opacity = isUp ? '1' : '0.5';
+      this.style.transform = 'translateY(0)';
+      this.style.boxShadow = 'none';
+    });
+
+    container.appendChild(btn);
+  });
+}
+
+// Event delegation for interface selection
+document.addEventListener('click', (e) => {
+  const btn = e.target.closest('.traffic-iface-btn');
+  if (btn) {
+    const ifaceName = btn.dataset.ifaceName;
+    const ifaceStatus = btn.dataset.ifaceStatus;
+
+    // Only allow selection if interface is UP
+    if (ifaceStatus === 'up') {
+      console.log('Interface selected:', ifaceName);
+      selectedTrafficInterface = ifaceName;
+
+      // Reload to update UI
+      const container = $('traffic-interface-list');
+      const buttons = container.querySelectorAll('.traffic-iface-btn');
+      buttons.forEach(b => {
+        const isSelected = b.dataset.ifaceName === selectedTrafficInterface;
+        const borderColor = isSelected ? 'var(--brand)' : 'var(--border)';
+        const bgColor = isSelected ? 'rgba(var(--brand-rgb), 0.1)' : 'var(--bg)';
+        b.style.borderColor = borderColor;
+        b.style.background = bgColor;
+
+        // Update checkmark
+        const checkmark = b.querySelector('[style*="font-size:16px"]');
+        if (checkmark) {
+          checkmark.style.color = isSelected ? 'var(--brand)' : 'transparent';
+        }
+      });
+    }
+  }
 });
+
+function updateQdiscButtons() {
+  const buttons = document.querySelectorAll('.qdisc-btn');
+  buttons.forEach(btn => {
+    const qdisc = btn.dataset.qdisc;
+    const isSelected = qdisc === selectedQdisc;
+
+    // Update border and background
+    btn.style.borderColor = isSelected ? 'var(--brand)' : 'var(--border)';
+    btn.style.background = isSelected ? 'var(--brand)' : 'var(--bg-elevated)';
+    btn.style.color = isSelected ? 'white' : 'var(--text)';
+
+    // Update subtitle color
+    const divs = btn.querySelectorAll('div');
+    if (divs.length > 1) {
+      divs[1].style.color = isSelected ? 'rgba(255,255,255,0.7)' : 'var(--text-dim)';
+    }
+  });
+  $('traffic-cake-options').style.display = selectedQdisc === 'cake' ? 'block' : 'none';
+}
+
+// Use event delegation for qdisc buttons (works even if buttons are added dynamically)
+document.addEventListener('click', (e) => {
+  const btn = e.target.closest('.qdisc-btn');
+  if (btn) {
+    const qdisc = btn.dataset.qdisc;
+    console.log('Qdisc button clicked:', qdisc);
+    selectedQdisc = qdisc;
+    updateQdiscButtons();
+  }
+});
+
+$('btn-save-traffic').addEventListener('click', withClickLock($('btn-save-traffic'), async () => {
+  const maxDynamicLimit = parseInt($('traffic-max-dynamic-limit').value, 10);
+  if (maxDynamicLimit <= 0 || maxDynamicLimit > 1000) {
+    Portal.toast('Maximum per-user limit must be 1-1000 Mbps', false);
+    return;
+  }
+
+  const totalBandwidth = parseInt($('traffic-total-bandwidth').value, 10);
+  if (totalBandwidth <= 0 || totalBandwidth > 10000) {
+    Portal.toast('Total bandwidth must be 1-10000 Mbps', false);
+    return;
+  }
+
+  if (!selectedTrafficInterface) {
+    Portal.toast('Please select a network interface', false);
+    return;
+  }
+
+  const payload = {
+    maximum_dynamic_mbps: maxDynamicLimit,
+    total_bandwidth_mbps: totalBandwidth,
+    qdisc_type: selectedQdisc,
+    interface_name: selectedTrafficInterface
+  };
+
+  if (selectedQdisc === 'cake') {
+    payload.overhead_bytes = parseInt($('traffic-overhead').value, 10) || 38;
+    payload.enable_ingress = $('traffic-enable-ingress').checked;
+  }
+
+  const r = await fetch('/api/admin/traffic_control', {
+    method: 'PUT',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify(payload)
+  });
+  if (!r.ok) {
+    const d = await r.json().catch(() => ({}));
+    Portal.toast(d.error || 'Save failed', false);
+    return;
+  }
+  Portal.toast('Traffic control configured on ' + selectedTrafficInterface, true);
+  await loadTrafficControl();
+}));
+
+// --- Network Configuration ---
+let discoveredInterfaces = [];
+let selectedInterface = null;
+let networkConfigData = null;
+let wanInterface = null;
+
+async function loadNetworkConfig() {
+  try {
+    // Fetch network configuration
+    const cfgResp = await fetch('/api/admin/network_config');
+    const cfg = await cfgResp.json();
+    networkConfigData = cfg;
+
+    $('net-dhcp-start').value = cfg.dhcp_range_start || '';
+    $('net-dhcp-end').value = cfg.dhcp_range_end || '';
+    $('net-dhcp-netmask').value = cfg.dhcp_subnet_mask || '';
+    $('net-dhcp-broadcast').value = cfg.dhcp_broadcast_addr || '';
+    renderDNSServers(cfg.dns_servers || []);
+
+    // Fetch discovered interfaces with detection info
+    const ifaceResp = await fetch('/api/admin/network_interfaces');
+    if (!ifaceResp.ok) {
+      Portal.toast('Failed to discover network interfaces', false);
+      return;
+    }
+    discoveredInterfaces = await ifaceResp.json();
+
+    // Find WAN interface and populate WAN tab
+    wanInterface = discoveredInterfaces.find(i => i.is_wan);
+    if (wanInterface) {
+      $('net-wan-interface').textContent = wanInterface.name;
+      $('net-wan-status').textContent = wanInterface.status.toUpperCase();
+      $('net-wan-speed').textContent = wanInterface.speed || '-';
+      $('net-wan-mac').textContent = wanInterface.mac || '-';
+      $('net-wan-ip').textContent = wanInterface.ip || 'Not assigned';
+      $('net-wan-info').style.display = 'block';
+    }
+
+    renderLANInterfaces();
+  } catch (err) {
+    console.error('Error loading network config:', err);
+    Portal.toast('Error loading network configuration', false);
+  }
+}
+
+function renderLANInterfaces() {
+  const el = $('net-lan-interfaces');
+  el.innerHTML = '';
+
+  // Filter: UP, non-loopback, non-WAN, sort by private IP
+  const candidates = discoveredInterfaces
+    .filter(i => !i.is_loopback && !i.is_wan && i.status === 'up')
+    .sort((a, b) => {
+      const aPrivate = a.is_private_ip ? 0 : 1;
+      const bPrivate = b.is_private_ip ? 0 : 1;
+      if (aPrivate !== bPrivate) return aPrivate - bPrivate;
+      return a.name.localeCompare(b.name);
+    });
+
+  if (candidates.length === 0) {
+    el.innerHTML = '<div class="hint">No LAN candidates found. Ensure at least one interface is UP and not the WAN interface.</div>';
+    $('net-iface-selection').style.display = 'none';
+    selectedInterface = null;
+    return;
+  }
+
+  // Hide interface selection if only 1 interface, auto-select it
+  if (candidates.length <= 1) {
+    $('net-iface-selection').style.display = 'none';
+    if (candidates.length === 1) {
+      selectedInterface = candidates[0];
+      selectLANInterface(candidates[0], null);
+    }
+    return;
+  }
+
+  // Show interface selection if multiple interfaces
+  $('net-iface-selection').style.display = 'block';
+
+  candidates.forEach(iface => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'lan-iface-btn';
+    btn.style.cssText = `
+      display:block; width:100%; padding:12px 14px; margin-bottom:8px;
+      text-align:left; background:var(--bg-elevated); border:2px solid var(--border);
+      border-radius:6px; cursor:pointer; transition:all 0.2s;
+      font-size:14px; font-weight:500; color:var(--text);
+    `;
+
+    let badge = '';
+    if (iface.is_private_ip) {
+      badge = '<span style="font-size:10px; background:var(--brand); color:white; padding:2px 6px; border-radius:3px; font-weight:600; margin-left:8px;">PRIVATE IP</span>';
+    }
+
+    btn.innerHTML = `
+      <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
+        <div style="flex:1; min-width:0;">
+          <div style="margin-bottom:4px;"><strong>${iface.name}</strong>${badge}</div>
+          <div style="font-size:12px; color:var(--text-dim);">MAC: ${iface.mac || '-'}</div>
+          ${iface.ip ? `<div style="font-size:12px; color:var(--text-dim);">IP: ${iface.ip}</div>` : ''}
+        </div>
+        <div style="flex-shrink:0; font-size:20px; color:transparent;" class="lan-check">✓</div>
+      </div>
+    `;
+
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      selectLANInterface(iface, btn);
+    });
+
+    el.appendChild(btn);
+  });
+}
+
+
+function selectLANInterface(iface, btn) {
+  selectedInterface = iface;
+  
+  // Show config section
+  $('net-lan-config').style.display = 'block';
+
+  // Update all interface buttons to remove selection highlight
+  document.querySelectorAll('.lan-iface-btn').forEach(b => {
+    b.style.borderColor = 'var(--border)';
+    b.style.background = 'var(--bg-elevated)';
+    b.querySelector('.lan-check').style.color = 'transparent';
+  });
+
+  // Highlight selected interface button
+  if (btn) {
+    btn.style.borderColor = 'var(--brand)';
+    btn.style.background = 'var(--bg)';
+    btn.querySelector('.lan-check').style.color = 'var(--brand)';
+  }
+
+  // Populate interface details (expandable section)
+  $('net-iface-status-detail').textContent = iface.status.toUpperCase();
+  $('net-iface-speed-detail').textContent = iface.speed || '-';
+  $('net-iface-mac-detail').textContent = iface.mac || '-';
+  $('net-iface-ip-detail').textContent = iface.ip || 'Not assigned';
+
+  // If WLAN candidate, load hostapd config
+  if (iface.is_hostapd_candidate) {
+    loadHostapdForInterface(iface);
+    $('net-hostapd-enabled').disabled = false;
+    $('net-hostapd-label').style.display = 'flex';
+  } else {
+    // Hide WLAN tab and toggle if not a hostapd candidate
+    $('net-tab-wlan').style.display = 'none';
+    $('net-hostapd-enabled').disabled = true;
+    $('net-hostapd-enabled').checked = false;
+    $('net-hostapd-fields').style.display = 'none';
+    $('net-hostapd-status-label').textContent = 'Enable WiFi';
+    $('net-hostapd-label').style.display = 'none';
+  }
+}
+
+async function loadHostapdForInterface(iface) {
+  try {
+    const hostapdResp = await fetch('/api/admin/hostapd_config');
+    if (hostapdResp.ok) {
+      const hostapdCfg = await hostapdResp.json();
+      $('net-hostapd-ssid').value = hostapdCfg.ssid || 'PisoWiFi';
+      $('net-hostapd-channel').value = hostapdCfg.channel || 7;
+      $('net-hostapd-mode').value = hostapdCfg.mode || 'g';
+      $('net-hostapd-enabled').checked = hostapdCfg.enabled || false;
+      $('net-hostapd-fields').style.display = hostapdCfg.enabled ? 'block' : 'none';
+      $('net-hostapd-status-label').textContent = hostapdCfg.enabled ? 'Disable WiFi' : 'Enable WiFi';
+      // Show WLAN tab
+      $('net-tab-wlan').style.display = 'block';
+    }
+  } catch (err) {
+    console.error('Failed to load hostapd config:', err);
+  }
+}
+
+function renderDNSServers(servers) {
+  const el = $('net-dns-list');
+  el.innerHTML = '';
+  servers.forEach(server => {
+    const div = document.createElement('div');
+    div.className = 'net-dns-row';
+    div.style.cssText = 'display:flex; gap:8px; margin-bottom:8px;';
+    div.innerHTML = `
+      <input type="text" value="${server}" placeholder="e.g. 8.8.8.8" style="flex:1;">
+      <button class="rm-btn" aria-label="Remove" style="flex-shrink:0;">
+        <svg viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
+      </button>`;
+    div.querySelector('.rm-btn').addEventListener('click', () => div.remove());
+    el.appendChild(div);
+  });
+}
+
+// Tab switching
+document.querySelectorAll('.net-tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const tabName = btn.dataset.tab;
+
+    // Hide all tabs
+    document.querySelectorAll('.net-tab-content').forEach(tab => {
+      tab.style.display = 'none';
+    });
+
+    // Show selected tab
+    $('net-tab-' + tabName).style.display = 'block';
+
+    // Update tab button styles
+    document.querySelectorAll('.net-tab-btn').forEach(b => {
+      b.style.color = 'var(--text-dim)';
+      b.style.borderBottomColor = 'transparent';
+    });
+    btn.style.color = 'var(--brand)';
+    btn.style.borderBottomColor = 'var(--brand)';
+  });
+});
+
+// Set initial active tab styling
+document.querySelector('.net-tab-btn[data-tab="lan"]').style.color = 'var(--brand)';
+document.querySelector('.net-tab-btn[data-tab="lan"]').style.borderBottomColor = 'var(--brand)';
+
+// Add hover effects to tabs
+document.querySelectorAll('.net-tab-btn').forEach(btn => {
+  btn.addEventListener('mouseenter', () => {
+    if (btn.style.color !== 'var(--brand)') {
+      btn.style.color = 'var(--text)';
+    }
+  });
+  btn.addEventListener('mouseleave', () => {
+    if (btn.style.borderBottomColor !== 'var(--brand)') {
+      btn.style.color = 'var(--text-dim)';
+    }
+  });
+});
+
+// Expandable details toggle
+$('net-expand-details').addEventListener('click', () => {
+  const content = $('net-details-content');
+  const arrow = $('net-expand-details').querySelector('span:last-child');
+  const isHidden = content.style.display === 'none';
+  content.style.display = isHidden ? 'block' : 'none';
+  arrow.style.transform = isHidden ? 'rotate(0deg)' : 'rotate(180deg)';
+  arrow.style.transition = 'transform 0.2s';
+});
+
+// Hostapd toggle handler (use withClickLock on the label button proxy)
+const hostapdToggle = async (e) => {
+  const enabled = e.target.checked;
+  const statusLabel = $('net-hostapd-status-label');
+  statusLabel.textContent = enabled ? 'Disabling...' : 'Enabling...';
+  e.target.disabled = true;
+
+  try {
+    const resp = await fetch('/api/admin/hostapd_config', {
+      method: 'PATCH',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({enabled: enabled})
+    });
+
+    if (resp.ok) {
+      const cfg = await resp.json();
+      $('net-hostapd-fields').style.display = cfg.enabled ? 'block' : 'none';
+      statusLabel.textContent = cfg.enabled ? 'Disable WiFi' : 'Enable WiFi';
+      Portal.toast(cfg.enabled ? 'WiFi enabled' : 'WiFi disabled', true);
+    } else {
+      Portal.toast('Failed to toggle WiFi', false);
+      e.target.checked = !enabled;
+    }
+  } catch (err) {
+    console.error('Hostapd toggle error:', err);
+    Portal.toast('Error toggling WiFi', false);
+    e.target.checked = !enabled;
+  } finally {
+    e.target.disabled = false;
+  }
+};
+$('net-hostapd-enabled').addEventListener('change', hostapdToggle);
+
+$('btn-add-dns').addEventListener('click', () => {
+  const div = document.createElement('div');
+  div.className = 'net-dns-row';
+  div.style.cssText = 'display:flex; gap:8px; margin-bottom:8px;';
+  div.innerHTML = `
+    <input type="text" placeholder="e.g. 8.8.8.8" style="flex:1;">
+    <button class="rm-btn" aria-label="Remove" style="flex-shrink:0;">
+      <svg viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
+    </button>`;
+  div.querySelector('.rm-btn').addEventListener('click', () => div.remove());
+  $('net-dns-list').appendChild(div);
+});
+
+$('btn-save-network').addEventListener('click', withClickLock($('btn-save-network'), async () => {
+  // Collect DNS servers
+  const dnsRows = $('net-dns-list').querySelectorAll('.net-dns-row');
+  const dnsServers = [];
+  dnsRows.forEach(row => {
+    const val = row.querySelector('input').value.trim();
+    if (val) dnsServers.push(val);
+  });
+
+  // Build configuration from current state
+  const cfg = {
+    dhcp_range_start: $('net-dhcp-start').value.trim(),
+    dhcp_range_end: $('net-dhcp-end').value.trim(),
+    dhcp_subnet_mask: $('net-dhcp-netmask').value.trim(),
+    dhcp_broadcast_addr: $('net-dhcp-broadcast').value.trim(),
+    dns_servers: dnsServers,
+    interfaces: [],
+    roles: []
+  };
+
+  // If an interface is selected, configure it as LAN
+  if (selectedInterface) {
+    const ifaceConfig = {
+      name: selectedInterface.name,
+      ip: '',
+      netmask: '',
+      gateway: '',
+      dhcp: true,
+      enabled: true
+    };
+    cfg.interfaces.push(ifaceConfig);
+    cfg.roles.push({
+      interface_name: selectedInterface.name,
+      role: 'lan',
+      primary: true
+    });
+  }
+
+  const r = await fetch('/api/admin/network_config', {
+    method: 'PUT',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify(cfg)
+  });
+  if (!r.ok) {
+    const d = await r.json().catch(() => ({}));
+    Portal.toast(d.error || 'Save failed', false);
+    return;
+  }
+
+  // Save hostapd config if interface is a hostapd candidate
+  if (selectedInterface && selectedInterface.is_hostapd_candidate && $('net-hostapd-enabled').checked) {
+    const hostapdCfg = {
+      ssid: $('net-hostapd-ssid').value.trim() || 'PisoWiFi',
+      channel: parseInt($('net-hostapd-channel').value) || 7,
+      mode: $('net-hostapd-mode').value || 'g'
+    };
+
+    const hr = await fetch('/api/admin/hostapd_config', {
+      method: 'PUT',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(hostapdCfg)
+    });
+    if (!hr.ok) {
+      console.error('Failed to save hostapd config');
+    }
+  }
+
+  Portal.toast('Network settings saved', true);
+  await loadNetworkConfig();
+}));
 
 // --- Modals ---
 function openModal(id) { $(id).classList.add('open'); }
@@ -719,13 +1591,13 @@ let confirmHandler = null;
 function confirmAction(title, desc, onConfirm) {
   $('confirm-title').textContent = title;
   $('confirm-desc').textContent = desc;
-  confirmHandler = onConfirm;
+  confirmHandler = withClickLock($('confirm-ok'), onConfirm);
   openModal('modal-confirm');
 }
 $('confirm-cancel').addEventListener('click', () => closeModal('modal-confirm'));
-$('confirm-ok').addEventListener('click', () => {
+$('confirm-ok').addEventListener('click', async () => {
   closeModal('modal-confirm');
-  if (confirmHandler) confirmHandler();
+  if (confirmHandler) await confirmHandler();
 });
 
 // --- Utils ---

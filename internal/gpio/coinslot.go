@@ -12,16 +12,22 @@ import (
 
 const gpioBase = "/sys/class/gpio/"
 
-// Coinslot interfaces with the GPIO-based coin acceptor.
+// Coinslot interfaces with the GPIO-based coin acceptor using active polling.
 type Coinslot struct {
-	mu        sync.Mutex
-	busy      bool
-	slotPin   int // coin slot pulse input
-	sensorPin int // sensor enable/disable output
+	mu            sync.Mutex
+	busy          bool
+	slotPin       int           // coin slot pulse input
+	sensorPin     int           // sensor enable/disable output
+	debounceDelay time.Duration // configurable debounce delay for coin detection
 }
 
+// NewCoinslot creates a new coin slot GPIO interface.
 func NewCoinslot(slotPin, sensorPin int) *Coinslot {
-	cs := &Coinslot{slotPin: slotPin, sensorPin: sensorPin}
+	cs := &Coinslot{
+		slotPin:       slotPin,
+		sensorPin:     sensorPin,
+		debounceDelay: 88 * time.Millisecond,
+	}
 	cs.initPins(slotPin, sensorPin)
 	return cs
 }
@@ -30,6 +36,8 @@ func (cs *Coinslot) initPins(slotPin, sensorPin int) {
 	exportPin(slotPin)
 	exportPin(sensorPin)
 	time.Sleep(100 * time.Millisecond)
+	setDirection(slotPin, "in")
+	setEdge(slotPin, "both")
 	setDirection(sensorPin, "out")
 }
 
@@ -37,7 +45,25 @@ func (cs *Coinslot) initPins(slotPin, sensorPin int) {
 func (cs *Coinslot) PinConfig() Config {
 	cs.mu.Lock()
 	defer cs.mu.Unlock()
-	return Config{SlotPin: cs.slotPin, SensorPin: cs.sensorPin}
+	return Config{
+		SlotPin:    cs.slotPin,
+		SensorPin:  cs.sensorPin,
+		DebounceMS: int(cs.debounceDelay.Milliseconds()),
+	}
+}
+
+// SetDebounceDelay updates the coin detection debounce delay.
+func (cs *Coinslot) SetDebounceDelay(delay time.Duration) {
+	cs.mu.Lock()
+	defer cs.mu.Unlock()
+	cs.debounceDelay = delay
+}
+
+// GetDebounceDelay returns the current coin detection debounce delay in milliseconds.
+func (cs *Coinslot) GetDebounceDelay() int {
+	cs.mu.Lock()
+	defer cs.mu.Unlock()
+	return int(cs.debounceDelay.Milliseconds())
 }
 
 // Reconfigure switches to a new pin assignment, exporting the new pins.
@@ -77,6 +103,11 @@ func exportPin(pin int) {
 func setDirection(pin int, dir string) {
 	path := fmt.Sprintf("%sgpio%d/direction", gpioBase, pin)
 	os.WriteFile(path, []byte(dir), 0644)
+}
+
+func setEdge(pin int, edge string) {
+	path := fmt.Sprintf("%sgpio%d/edge", gpioBase, pin)
+	os.WriteFile(path, []byte(edge), 0644)
 }
 
 func readPin(pin int) int {
@@ -135,8 +166,9 @@ type TopupResult struct {
 	Cancelled bool    `json:"cancelled"`
 }
 
-// RunTopup starts a coin-counting session. It sends progress updates to the
-// provided channel and blocks until timeout or cancellation.
+// RunTopup starts a coin-counting session using active polling while sensor is ON.
+// Matches the proven PHP implementation logic for accurate coin detection.
+// It sends progress updates to the provided channel and blocks until timeout or cancellation.
 // The cancel channel can be closed to abort the session early.
 func (cs *Coinslot) RunTopup(mac string, amountToMB func(int) float64, cancelCh <-chan struct{}) <-chan TopupResult {
 	ch := make(chan TopupResult, 100)
@@ -146,6 +178,7 @@ func (cs *Coinslot) RunTopup(mac string, amountToMB func(int) float64, cancelCh 
 
 		cs.mu.Lock()
 		cs.busy = true
+		debounce := cs.debounceDelay
 		cs.mu.Unlock()
 		defer func() {
 			cs.mu.Lock()
@@ -160,6 +193,7 @@ func (cs *Coinslot) RunTopup(mac string, amountToMB func(int) float64, cancelCh 
 		timeout := 50 * time.Second
 		start := time.Now()
 
+		// Timer for periodic status updates (100ms)
 		ticker := time.NewTicker(100 * time.Millisecond)
 		defer ticker.Stop()
 
@@ -168,32 +202,41 @@ func (cs *Coinslot) RunTopup(mac string, amountToMB func(int) float64, cancelCh 
 			case <-cancelCh:
 				ch <- TopupResult{MAC: mac, Amount: count, MB: amountToMB(count), Cancelled: true}
 				return
-			case <-ticker.C:
-				// Check coin pulse
+
+			default:
+				// Active polling: check slot pin and debounce
 				if cs.SlotRead() == 1 {
 					count++
-					time.Sleep(88 * time.Millisecond) // debounce
+					time.Sleep(debounce)
 				}
+			}
 
-				elapsed := time.Since(start)
-				remaining := int(timeout.Seconds() - elapsed.Seconds())
+			// Check timeout and send periodic updates
+			elapsed := time.Since(start)
+			if elapsed >= timeout {
+				mb := amountToMB(count)
+				ch <- TopupResult{MAC: mac, Amount: count, MB: mb, Done: true}
+				return
+			}
+
+			// Send periodic progress update on ticker
+			select {
+			case <-ticker.C:
+				remaining := int((timeout - elapsed).Seconds())
 				if remaining < 0 {
 					remaining = 0
 				}
-
 				mb := amountToMB(count)
-
 				ch <- TopupResult{
 					MAC:       mac,
 					Amount:    count,
 					MB:        mb,
 					Countdown: remaining,
 				}
-
-				if elapsed >= timeout {
-					ch <- TopupResult{MAC: mac, Amount: count, MB: mb, Done: true}
-					return
-				}
+			case <-cancelCh:
+				ch <- TopupResult{MAC: mac, Amount: count, MB: amountToMB(count), Cancelled: true}
+				return
+			default:
 			}
 		}
 	}()

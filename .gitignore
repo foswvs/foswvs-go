@@ -6,5 +6,10 @@ foswvs-go-arm64
 *.tar.gz
 *.db
 *.har
+*.log
+*.png
+log.txt
 password.sha256
 certs/
+main
+foswvs-php

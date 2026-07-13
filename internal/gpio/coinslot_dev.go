@@ -11,15 +11,16 @@ import (
 // DevCoinslot is a mock coinslot for development without GPIO hardware.
 // Simulates coin insertion via a timer when RunTopup is called.
 type DevCoinslot struct {
-	mu        sync.Mutex
-	busy      bool
-	slotPin   int
-	sensorPin int
+	mu              sync.Mutex
+	busy            bool
+	slotPin         int
+	sensorPin       int
+	debounceDelay   time.Duration
 }
 
 func NewDevCoinslot(slotPin, sensorPin int) *DevCoinslot {
 	log.Println("gpio: using DEV stub (no hardware)")
-	return &DevCoinslot{slotPin: slotPin, sensorPin: sensorPin}
+	return &DevCoinslot{slotPin: slotPin, sensorPin: sensorPin, debounceDelay: 88 * time.Millisecond}
 }
 
 func (cs *DevCoinslot) IsBusy() bool {
@@ -39,7 +40,7 @@ func (cs *DevCoinslot) SlotRead() int   { return 0 }
 func (cs *DevCoinslot) PinConfig() Config {
 	cs.mu.Lock()
 	defer cs.mu.Unlock()
-	return Config{SlotPin: cs.slotPin, SensorPin: cs.sensorPin}
+	return Config{SlotPin: cs.slotPin, SensorPin: cs.sensorPin, DebounceMS: int(cs.debounceDelay.Milliseconds())}
 }
 
 // Reconfigure updates the tracked pins. No real GPIO to touch in dev mode.
@@ -52,6 +53,20 @@ func (cs *DevCoinslot) Reconfigure(slotPin, sensorPin int) error {
 	cs.slotPin = slotPin
 	cs.sensorPin = sensorPin
 	return nil
+}
+
+// SetDebounceDelay updates the coin detection debounce delay.
+func (cs *DevCoinslot) SetDebounceDelay(delay time.Duration) {
+	cs.mu.Lock()
+	defer cs.mu.Unlock()
+	cs.debounceDelay = delay
+}
+
+// GetDebounceDelay returns the current coin detection debounce delay in milliseconds.
+func (cs *DevCoinslot) GetDebounceDelay() int {
+	cs.mu.Lock()
+	defer cs.mu.Unlock()
+	return int(cs.debounceDelay.Milliseconds())
 }
 
 // RunTopup simulates a coin insertion session.

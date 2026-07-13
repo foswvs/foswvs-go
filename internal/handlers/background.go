@@ -9,22 +9,40 @@ import (
 	"github.com/foswvs/foswvs-go/internal/ws"
 )
 
-// DHCPWatcher polls the ARP table and registers new devices into the database.
-// Replaces the PHP DHCP on-commit hook + infinite loop.
+// DHCPWatcher manages device registration based on DHCP lease updates.
+// Behavior depends on the lease monitoring mode:
+// - hook mode: processes leases from the hook callback (async)
+// - file_poll mode: polls the dhcpd.leases file periodically
+//
+// In hook mode, this still serves as a background loop that reacts to device updates.
+// In file_poll mode, this actively polls for lease changes.
 func (a *App) DHCPWatcher(ctx context.Context, net *network.Net) {
-	ticker := time.NewTicker(5 * time.Second)
+	// In hook mode: use a longer tick for fallback ARP polling
+	// In file_poll mode: use a shorter tick for active file polling
+	tickInterval := 30 * time.Second
+	if net.GetLeaseMonitorMode() == network.FilePollMode {
+		tickInterval = 5 * time.Second
+	}
+
+	ticker := time.NewTicker(tickInterval)
 	defer ticker.Stop()
 
-	log.Println("bg: DHCP watcher started")
+	log.Printf("bg: DHCP watcher started (mode: %s)", net.GetLeaseMonitorMode())
 
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			lockdown := a.Maintenance.Get().Mode == MaintenanceLockdown
+			// In file_poll mode: actively poll the file
+			if net.GetLeaseMonitorMode() == network.FilePollMode {
+				net.PollDHCPLeasesFile()
+			}
 
+			// Process current leases (from cache, populated by either hook or polling)
+			lockdown := a.Maintenance.Get().Mode == MaintenanceLockdown
 			leases := net.DHCPLeases()
+
 			for _, lease := range leases {
 				devID, err := a.Store.UpsertDevice(lease.MAC, lease.IP, lease.Hostname)
 				if err != nil {
@@ -43,10 +61,10 @@ func (a *App) DHCPWatcher(ctx context.Context, net *network.Net) {
 					continue
 				}
 
-				// Auto-reconnect if device has remaining data (paid, or
-				// previously granted by maintenance free mode)
+				// Auto-reconnect only if device is present/connected AND has remaining data
+				// (paid, or previously granted by maintenance free mode)
 				du, _ := a.Store.GetDataUsage(devID)
-				if du.MBLimit > du.MBUsed {
+				if du.MBLimit > du.MBUsed && net.MACForIP(lease.IP) != "" {
 					if !a.IPT.IsConnected(lease.IP) {
 						a.IPT.AddClient(lease.IP)
 						log.Printf("bg: auto-reconnected %s (%s) - %.1fMB remaining",
@@ -62,7 +80,7 @@ func (a *App) DHCPWatcher(ctx context.Context, net *network.Net) {
 // exhausted clients, and pushes real-time usage updates via WebSocket.
 // Replaces the PHP `api/clients` infinite loop.
 func (a *App) UsagePoller(ctx context.Context) {
-	ticker := time.NewTicker(3 * time.Second)
+	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 
 	log.Println("bg: usage poller started")
@@ -108,16 +126,15 @@ func (a *App) pollUsage() {
 		}
 
 		// Check if exhausted
-		du, _ := a.Store.GetDataUsage(devID)
+		mac, du, _ := a.Store.GetDeviceFullInfo(devID)
 		if du.MBLimit <= du.MBUsed {
 			a.IPT.RemoveClient(ip)
-			a.Hub.SendToIP(ip, ws.MsgNetworkStatus, map[string]string{"status": "disconnected"})
-			a.Hub.SendToIP(ip, ws.MsgAlert, map[string]string{"message": "data exhausted"})
+			a.Hub.SendToDevice(devID, ws.MsgNetworkStatus, map[string]string{"status": "disconnected"})
+			a.Hub.SendToDevice(devID, ws.MsgAlert, map[string]string{"message": "data exhausted"})
 			log.Printf("bg: disconnected %s (data exhausted)", ip)
 		} else {
 			// Push live usage update to connected client
-			mac, _ := a.Store.GetDeviceMAC(devID)
-			a.Hub.SendToIP(ip, ws.MsgDataUsage, map[string]interface{}{
+			a.Hub.SendToDevice(devID, ws.MsgDataUsage, map[string]interface{}{
 				"ip":       ip,
 				"mac":      mac,
 				"mb_limit": du.MBLimit,

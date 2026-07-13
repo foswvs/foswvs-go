@@ -5,7 +5,14 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0d9488" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#0d0f14" media="(prefers-color-scheme: dark)">
+<meta name="description" content="Free and open-source WiFi vendo software for Raspberry Pi. Pay-as-you-go internet access.">
+<meta name="apple-mobile-web-app-capable" content="true">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="PisoWiFi">
 <link rel="shortcut icon" href="/favicon.ico" type="image/x-icon">
+<link rel="icon" href="/favicon.ico" type="image/x-icon">
+<link rel="apple-touch-icon" href="/icons/icon-192x192.png">
+<link rel="manifest" href="/manifest.json">
 <link rel="stylesheet" href="/css/portal.css">
 <title>PisoWiFi</title>
 </head>
@@ -23,7 +30,7 @@
     <section class="view" id="view-home">
       <div class="brand">
         <h1>PISO WIFI</h1>
-        <p class="slogan">&#8369;1 &bull; &#8369;5 &bull; &#8369;10 &bull; &#8369;20</p>
+        <p class="slogan">1 - 5 - 10 - 20</p>
       </div>
 
       <div class="card" id="maintenance-card" style="display:none; text-align:center;">
@@ -192,6 +199,22 @@
 </div>
 
 <audio id="coin-sfx" src="/sfx/coin.wav" preload="auto"></audio>
+<audio id="beep-sfx" src="/sfx/beep.mp3" preload="auto"></audio>
+
+<!-- Service Worker Registration -->
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js', { scope: '/' })
+      .then(reg => {
+        console.log('ServiceWorker registered:', reg);
+        // Check for updates periodically
+        setInterval(() => reg.update(), 60000);
+      })
+      .catch(err => console.log('ServiceWorker registration failed:', err));
+  });
+}
+</script>
 
 <script src="/js/vendor/qrcode-generator.min.js"></script>
 <script src="/js/vendor/jsQR.min.js"></script>
@@ -201,16 +224,81 @@ const $ = id => document.getElementById(id);
 const btn = $('btn'), stat = $('stat'), statText = $('stat-text');
 
 let ws, mbFree = 0, mbLimit = 0, topupActive = false, reconnectTimer, netStatus = 'checking', lastCoinAmt = 0, maintenanceMode = 'off';
+let usePolling = false, pollingTimer, topupPollingTimer, wsConnected = false;
+
+function isPopupEnvironment() {
+  // Detect captive portal popup environment by checking:
+  // 1. Standalone mode (iOS/Android home screen apps)
+  // 2. Very small viewport (typical of captive portal windows)
+  // 3. Limited screen dimensions
+  return window.navigator.standalone === true ||
+         (window.innerWidth < 600 && window.innerHeight < 800);
+}
+
+function fetchDeviceToken() {
+  fetch('/api/device_token', { credentials: 'same-origin' }).then(r => {
+    if (r.ok) return r.json().then(d => {
+      if (d.token) Portal.setDeviceToken(d.token);
+    });
+  }).catch(() => {});
+}
+
+function startPollingFallback() {
+  if (usePolling) return;
+  usePolling = true;
+  console.warn('⚠️ Captive portal popup detected, using polling fallback (5s interval)');
+
+  // Fetch device token immediately when starting polling
+  fetchDeviceToken();
+
+  pollingTimer = setInterval(() => {
+    fetch('/api/data_usage', { credentials: 'same-origin' }).then(r => r.json()).then(d => {
+      updateDataUsage(d);
+    }).catch(() => {});
+
+    fetch('/api/network_status', { credentials: 'same-origin' }).then(r => r.json()).then(d => {
+      updateStatus(d.status);
+    }).catch(() => {});
+
+    // Refresh device token periodically in case it expires
+    fetchDeviceToken();
+  }, 5000);
+}
 
 // --- WebSocket (single connection shared by every tab) ---
 function wsConnect() {
+  if (usePolling) return;
+
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   const url = `${proto}://${location.host}/ws`;
   // Browsers don't allow custom headers on WebSocket connections, so the
   // device token rides in the Sec-WebSocket-Protocol handshake header via
   // the constructor's subprotocol argument instead of the URL.
   const token = Portal.getDeviceToken();
-  ws = token ? new WebSocket(url, [token]) : new WebSocket(url);
+
+  try {
+    ws = token ? new WebSocket(url, [token]) : new WebSocket(url);
+  } catch (err) {
+    console.error('🔴 WebSocket creation failed:', err);
+    startPollingFallback();
+    return;
+  }
+
+  ws.onopen = () => {
+    clearTimeout(reconnectTimer);
+    wsConnected = true;
+    console.log('🔵 WebSocket connected, token:', token ? '***' : 'none');
+    if (usePolling) {
+      clearInterval(pollingTimer);
+      usePolling = false;
+      console.log('✅ Switched from polling to WebSocket');
+    }
+    // Stop topup polling if WebSocket is now the transport
+    if (topupPollingTimer) {
+      clearInterval(topupPollingTimer);
+      topupPollingTimer = null;
+    }
+  };
 
   ws.onmessage = (e) => {
     const msg = JSON.parse(e.data);
@@ -247,8 +335,23 @@ function wsConnect() {
     }
   };
 
-  ws.onclose = () => {
+  ws.onerror = (err) => {
+    console.error('🔴 WebSocket error:', err);
+    wsConnected = false;
     clearTimeout(reconnectTimer);
+    if (!usePolling) {
+      startPollingFallback();
+    }
+    reconnectTimer = setTimeout(wsConnect, 3000);
+  };
+
+  ws.onclose = () => {
+    console.warn('⚠️ WebSocket closed');
+    wsConnected = false;
+    clearTimeout(reconnectTimer);
+    if (!usePolling) {
+      startPollingFallback();
+    }
     reconnectTimer = setTimeout(wsConnect, 3000);
   };
 }
@@ -262,8 +365,8 @@ function updateDataUsage(d) {
   $('mb_used_cap').textContent = Portal.formatMB(d.mb_used) + ' used';
   $('mb_limit_cap').textContent = Portal.formatMB(d.mb_limit) + ' total';
   $('progress-fill').style.width = d.mb_limit > 0 ? Math.min(100, (d.mb_used / d.mb_limit) * 100) + '%' : '0%';
-  $('mac_addr').textContent = d.mac;
-  $('ip_addr').textContent = d.ip;
+  if (d.mac !== undefined) $('mac_addr').textContent = d.mac;
+  if (d.ip !== undefined) $('ip_addr').textContent = d.ip;
   updateButton();
 }
 
@@ -331,6 +434,12 @@ function showTopupProgress(d) {
   $('topup-cd').textContent = `waiting for payment (${d.cd}s)`;
   btn.textContent = 'DONE';
   btn.className = 'btn btn-cancel';
+  btn.disabled = false;
+
+  // Play beep alert when topup starts waiting for payment
+  if (d.amt === 0) {
+    try { $('beep-sfx').play(); } catch(e) {}
+  }
 
   // TopupResult ticks arrive on every poll (coinslot sensor is read every
   // 100ms/500ms) with the cumulative coin count, not just when a coin is
@@ -345,6 +454,10 @@ function showTopupProgress(d) {
 function topupDone(d) {
   topupActive = false;
   lastCoinAmt = 0;
+  if (topupPollingTimer) {
+    clearInterval(topupPollingTimer);
+    topupPollingTimer = null;
+  }
   $('topup-info').style.display = 'none';
   Portal.toast(`Added ${Portal.formatMB(d.mb)} (${Portal.peso.format(d.amt)})`, true);
   updateDataUsage(d);
@@ -353,34 +466,83 @@ function topupDone(d) {
 
 // --- Button click ---
 btn.addEventListener('click', () => {
+  if (btn.disabled) return;
   const label = btn.textContent.toLowerCase();
 
   if (label === 'connect' || label === 'get free wifi') {
-    fetch('/api/connect', {method:'POST'}).then(r => {
+    btn.disabled = true;
+    fetch('/api/connect', {method:'POST', credentials: 'same-origin'}).then(r => {
       if (r.ok) updateStatus('connected');
       else Portal.toast('no data available', false);
-    });
+      btn.disabled = false;
+    }).catch(() => { btn.disabled = false; });
     return;
   }
 
   if (label === 'done') {
-    fetch('/api/topup_cancel');
-    topupActive = false;
-    lastCoinAmt = 0;
-    $('topup-info').style.display = 'none';
-    updateButton();
+    btn.disabled = true;
+    fetch('/api/topup_cancel', { credentials: 'same-origin' }).finally(() => {
+      topupActive = false;
+      lastCoinAmt = 0;
+      if (topupPollingTimer) {
+        clearInterval(topupPollingTimer);
+        topupPollingTimer = null;
+      }
+      $('topup-info').style.display = 'none';
+      updateButton();
+      btn.disabled = false;
+    });
     return;
   }
 
   // Insert coin
+  btn.disabled = true;
   lastCoinAmt = 0;
   btn.textContent = '...';
-  fetch('/api/topup').then(r => {
-    if (r.status === 409) { Portal.toast('coinslot is busy', false); updateButton(); }
-    else if (r.status === 429) { Portal.toast('too many attempts', false); updateButton(); }
-    else if (r.status === 202) { /* WS will handle progress */ }
-    else { updateButton(); }
-  }).catch(() => { updateButton(); });
+
+  // Only use polling if WebSocket is unavailable (captive portal or connection failure)
+  const pollTopupStatus = () => {
+    if (wsConnected) {
+      // WebSocket will deliver topup_progress and topup_done messages, stop polling
+      if (topupPollingTimer) {
+        clearInterval(topupPollingTimer);
+        topupPollingTimer = null;
+      }
+      return;
+    }
+
+    fetch('/api/topup_checker', { credentials: 'same-origin' }).then(r => {
+      if (r.status === 200) {
+        return r.json().then(d => {
+          showTopupProgress(d);
+          btn.disabled = false;  // Enable "DONE" button so user can cancel
+          topupPollingTimer = setTimeout(pollTopupStatus, 1000);
+        });
+      } else if (r.status === 401) {
+        // Topup ended or doesn't exist
+        topupActive = false;
+        updateButton();
+        btn.disabled = false;
+      }
+    }).catch(() => {
+      // Retry on error
+      if (topupActive && !wsConnected) {
+        topupPollingTimer = setTimeout(pollTopupStatus, 1000);
+      }
+    });
+  };
+
+  fetch('/api/topup', { credentials: 'same-origin' }).then(r => {
+    if (r.status === 409) { Portal.toast('coinslot is busy', false); updateButton(); btn.disabled = false; }
+    else if (r.status === 429) { Portal.toast('too many attempts', false); updateButton(); btn.disabled = false; }
+    else if (r.status === 202 || r.status === 200) { /* Polling will handle progress if needed */ }
+    else { updateButton(); btn.disabled = false; }
+  }).catch(() => { updateButton(); btn.disabled = false; });
+
+  // Start polling on next tick (gives server time to start topup), but only if WebSocket unavailable
+  if (!wsConnected) {
+    topupPollingTimer = setTimeout(pollTopupStatus, 500);
+  }
 });
 
 // --- Rates tab (lazy, loaded once) ---
@@ -388,7 +550,7 @@ let ratesLoaded = false;
 function loadRates() {
   if (ratesLoaded) return;
   ratesLoaded = true;
-  fetch('/api/rates').then(r => r.json()).then(rates => {
+  fetch('/api/rates', { credentials: 'same-origin' }).then(r => r.json()).then(rates => {
     const el = $('rates');
     const sorted = Object.entries(rates).sort((a,b) => parseInt(a[0]) - parseInt(b[0]));
     el.innerHTML = sorted.map(([amt, mb]) =>
@@ -402,7 +564,7 @@ let shareCodeLoaded = false;
 function loadShareCode() {
   if (shareCodeLoaded) return;
   shareCodeLoaded = true;
-  fetch('/api/share', {method:'POST'})
+  fetch('/api/share', {method:'POST', credentials: 'same-origin'})
     .then(r => r.text())
     .then(code => {
       $('share-code').textContent = code;
@@ -549,6 +711,7 @@ $('btn-share').addEventListener('click', () => {
 
   fetch('/api/share', {
     method: 'PUT',
+    credentials: 'same-origin',
     body: pendingCode + '|' + size
   }).then(async r => {
     const text = await r.text();
@@ -580,7 +743,7 @@ document.addEventListener('visibilitychange', () => {
 
 // --- History tab (refetched every time it's opened) ---
 function loadTxn() {
-  fetch('/api/txn').then(r => r.json()).then(txns => {
+  fetch('/api/txn', { credentials: 'same-origin' }).then(r => r.json()).then(txns => {
     const table = $('txn');
     table.querySelectorAll('tr:not(:first-child)').forEach(tr => tr.remove());
     $('empty').style.display = (!txns || txns.length === 0) ? 'block' : 'none';
@@ -613,9 +776,51 @@ function showView(name) {
 
 window.addEventListener('hashchange', () => showView(location.hash.slice(1)));
 
+// --- Early data fetch (before WebSocket) ---
+function initEarlyData() {
+  // Fetch device token and critical data immediately via HTTP to avoid 5s+ WebSocket delay
+  fetchDeviceToken();
+
+  fetch('/api/data_usage', { credentials: 'same-origin' }).then(r => {
+    if (r.ok) return r.json().then(d => updateDataUsage(d));
+  }).catch(() => {});
+
+  fetch('/api/network_status', { credentials: 'same-origin' }).then(r => {
+    if (r.ok) return r.json().then(d => updateStatus(d.status));
+  }).catch(() => {});
+}
+
 // --- Init ---
 showView(location.hash.slice(1));
-wsConnect();
+
+// Fetch data immediately on document ready instead of waiting for WebSocket
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initEarlyData);
+} else {
+  initEarlyData();
+}
+
+// Detect captive portal popup environment
+if (isPopupEnvironment()) {
+  console.log('📱 Popup environment detected, attempting WebSocket with polling fallback');
+  startPollingFallback();
+  setTimeout(wsConnect, 100);
+} else {
+  console.log('🌐 Full browser detected, using WebSocket');
+  wsConnect();
+}
+
+// Periodic safety check: ensure button state is correct even if WebSocket messages are delayed or missed
+setInterval(() => {
+  if (topupActive) return;
+  updateButton();
+}, 5000);
+
+// Cleanup on page unload
+window.addEventListener('beforeunload', () => {
+  if (pollingTimer) clearInterval(pollingTimer);
+  if (ws) ws.close();
+});
 </script>
 </body>
 </html>

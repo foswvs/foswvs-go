@@ -53,13 +53,15 @@ type Client struct {
 	send    chan []byte
 	ip      string
 	isAdmin bool
-	id      string // unique client ID
+	id      string  // unique client ID
+	devID   int64   // device ID for non-admin clients
 }
 
 // Hub manages all WebSocket connections and message routing.
 type Hub struct {
 	mu         sync.RWMutex
 	clients    map[*Client]bool
+	byDevID    map[int64]*Client // maps device ID to client for device-based routing
 	broadcast  chan []byte
 	register   chan *Client
 	unregister chan *Client
@@ -68,6 +70,7 @@ type Hub struct {
 func NewHub() *Hub {
 	return &Hub{
 		clients:    make(map[*Client]bool),
+		byDevID:    make(map[int64]*Client),
 		broadcast:  make(chan []byte, 256),
 		register:   make(chan *Client),
 		unregister: make(chan *Client),
@@ -90,13 +93,19 @@ func (h *Hub) Run(ctx context.Context) {
 		case client := <-h.register:
 			h.mu.Lock()
 			h.clients[client] = true
+			if client.devID > 0 {
+				h.byDevID[client.devID] = client
+			}
 			h.mu.Unlock()
-			log.Printf("ws: client connected ip=%s admin=%v (total=%d)", client.ip, client.isAdmin, len(h.clients))
+			log.Printf("ws: client connected ip=%s admin=%v devID=%d (total=%d)", client.ip, client.isAdmin, client.devID, len(h.clients))
 
 		case client := <-h.unregister:
 			h.mu.Lock()
 			if _, ok := h.clients[client]; ok {
 				delete(h.clients, client)
+				if client.devID > 0 {
+					delete(h.byDevID, client.devID)
+				}
 				close(client.send)
 			}
 			h.mu.Unlock()
@@ -147,10 +156,39 @@ func (h *Hub) SendToClient(client *Client, msgType MessageType, data interface{}
 	if err != nil {
 		return
 	}
+	defer func() {
+		if recover() != nil {
+			// Sending on closed channel; client likely disconnected
+		}
+	}()
 	select {
 	case client.send <- raw:
 	default:
 	}
+}
+
+// SendToDevice sends a message to a client by device ID.
+func (h *Hub) SendToDevice(devID int64, msgType MessageType, data interface{}) {
+	h.mu.RLock()
+	client := h.byDevID[devID]
+	h.mu.RUnlock()
+
+	if client != nil {
+		h.SendToClient(client, msgType, data)
+	}
+}
+
+// SetClientDeviceID updates the device ID for a client and updates the routing map.
+func (h *Hub) SetClientDeviceID(client *Client, devID int64) {
+	h.mu.Lock()
+	if client.devID > 0 && client.devID != devID {
+		delete(h.byDevID, client.devID)
+	}
+	client.devID = devID
+	if devID > 0 {
+		h.byDevID[devID] = client
+	}
+	h.mu.Unlock()
 }
 
 // SendToAdmins sends a message to all admin WebSocket clients.

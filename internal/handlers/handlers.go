@@ -10,13 +10,16 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/foswvs/foswvs-go/internal/auth"
+	"github.com/foswvs/foswvs-go/internal/bandwidth"
 	"github.com/foswvs/foswvs-go/internal/db"
 	"github.com/foswvs/foswvs-go/internal/gpio"
 	"github.com/foswvs/foswvs-go/internal/network"
@@ -36,6 +39,7 @@ type App struct {
 	DevMode     bool
 	JWTSecret   []byte // encrypts device tokens (see reconcileDeviceToken)
 	Maintenance *MaintenanceState
+	Shaper      *bandwidth.Shaper
 }
 
 // Routes builds the HTTP router.
@@ -49,13 +53,18 @@ func (a *App) Routes() http.Handler {
 	// --- Client API ---
 	mux.HandleFunc("/api/connect", a.handleConnect)
 	mux.HandleFunc("/api/data_usage", a.handleDataUsage)
+	mux.HandleFunc("/api/device_token", a.handleDeviceToken)
 	mux.HandleFunc("/api/topup", a.handleTopup)
 	mux.HandleFunc("/api/topup_cancel", a.handleTopupCancel)
 	mux.HandleFunc("/api/topup_check", a.handleTopupCheck)
+	mux.HandleFunc("/api/topup_checker", a.handleTopupChecker)
 	mux.HandleFunc("/api/network_status", a.handleNetworkStatus)
 	mux.HandleFunc("/api/txn", a.handleDeviceTxn)
 	mux.HandleFunc("/api/share", a.handleShare)
 	mux.HandleFunc("/api/rates", a.handleRatesPublic)
+
+	// --- DHCP hook (called by dhcpd on commit) ---
+	mux.HandleFunc("/api/dhcp_hook", a.handleDHCPHook)
 
 	// --- Admin API ---
 	mux.HandleFunc("/api/admin/login", a.handleAdminLogin)
@@ -69,11 +78,18 @@ func (a *App) Routes() http.Handler {
 	mux.HandleFunc("/api/admin/rates", a.requireAdmin(a.handleAdminRates))
 	mux.HandleFunc("/api/admin/gpio", a.requireAdmin(a.handleAdminGPIO))
 	mux.HandleFunc("/api/admin/maintenance", a.requireAdmin(a.handleAdminMaintenance))
+	mux.HandleFunc("/api/admin/traffic_control", a.requireAdmin(a.handleAdminTrafficControl))
+	mux.HandleFunc("/api/admin/traffic_control/interfaces", a.requireAdmin(a.handleAdminTrafficControlInterfaces))
 	mux.HandleFunc("/api/admin/system", a.requireAdmin(a.handleAdminSystem))
+	mux.HandleFunc("/api/admin/network_config", a.requireAdmin(a.handleAdminNetworkConfig))
+	mux.HandleFunc("/api/admin/network_interfaces", a.requireAdmin(a.handleAdminNetworkInterfaces))
+	mux.HandleFunc("/api/admin/network_roles", a.requireAdmin(a.handleAdminNetworkRoles))
+	mux.HandleFunc("/api/admin/hostapd_config", a.requireAdmin(a.handleAdminHostapdConfig))
 	mux.HandleFunc("/api/admin/add_session", a.requireAdmin(a.handleAdminAddSession))
 	mux.HandleFunc("/api/admin/del_session", a.requireAdmin(a.handleAdminDelSession))
 	mux.HandleFunc("/api/admin/clear_mb", a.requireAdmin(a.handleAdminClearMB))
 	mux.HandleFunc("/api/admin/block", a.requireAdmin(a.handleAdminBlock))
+	mux.HandleFunc("/api/admin/dhcp_mode", a.requireAdmin(a.handleAdminDHCPMode))
 
 	// --- Static files ---
 	webRoot := a.WebDir
@@ -112,8 +128,12 @@ func (a *App) clientIP(r *http.Request) string {
 
 func (a *App) deviceForIP(ip string) (int64, error) {
 	devID, err := a.Store.GetDeviceIDByIP(ip)
-	if err != nil || devID != 0 || !a.DevMode {
-		return devID, err
+	if err == nil && devID != 0 {
+		return devID, nil
+	}
+
+	if !a.DevMode && err != nil {
+		return 0, err
 	}
 
 	return a.Store.UpsertDevice(devMACForIP(ip), ip, devHostnameForIP(ip))
@@ -132,8 +152,7 @@ func devHostnameForIP(ip string) string {
 }
 
 func (a *App) deviceUsagePayload(devID int64, ip string) map[string]interface{} {
-	mac, _ := a.Store.GetDeviceMAC(devID)
-	du, _ := a.Store.GetDataUsage(devID)
+	mac, du, _ := a.Store.GetDeviceFullInfo(devID)
 	return map[string]interface{}{
 		"ip":       ip,
 		"mac":      mac,
@@ -286,6 +305,8 @@ func (a *App) handleClientWS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	a.Hub.SetClientDeviceID(client, devID)
+
 	if token := a.reconcileDeviceToken(devID, clientToken); token != "" {
 		a.Hub.SendToClient(client, ws.MsgDeviceToken, map[string]string{"token": token})
 	}
@@ -354,14 +375,16 @@ func (a *App) handleConnect(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if err := a.IPT.AddClient(ip); err != nil {
-		writeError(w, http.StatusInternalServerError, "iptables error")
-		return
+	if !a.IPT.IsConnected(ip) {
+		if err := a.IPT.AddClient(ip); err != nil {
+			writeError(w, http.StatusInternalServerError, "iptables error")
+			return
+		}
 	}
 
 	// Push updated status via WS
-	a.Hub.SendToIP(ip, ws.MsgNetworkStatus, map[string]string{"status": "connected"})
-	a.Hub.SendToIP(ip, ws.MsgDataUsage, a.deviceUsagePayload(devID, ip))
+	a.Hub.SendToDevice(devID, ws.MsgNetworkStatus, map[string]string{"status": "connected"})
+	a.Hub.SendToDevice(devID, ws.MsgDataUsage, a.deviceUsagePayload(devID, ip))
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -374,6 +397,23 @@ func (a *App) handleDataUsage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, a.deviceUsagePayload(devID, ip))
+}
+
+func (a *App) handleDeviceToken(w http.ResponseWriter, r *http.Request) {
+	ip := a.clientIP(r)
+	devID, _ := a.deviceForIP(ip)
+	if devID == 0 {
+		writeError(w, http.StatusUnauthorized, "unknown device")
+		return
+	}
+
+	token := a.mintDeviceToken(devID)
+	if token == "" {
+		writeError(w, http.StatusInternalServerError, "failed to generate token")
+		return
+	}
+
+	writeJSON(w, map[string]string{"token": token})
 }
 
 func (a *App) handleTopup(w http.ResponseWriter, r *http.Request) {
@@ -391,10 +431,9 @@ func (a *App) handleTopup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	mac, _ := a.Store.GetDeviceMAC(devID)
+	mac, count, _ := a.Store.GetDeviceTopupInfo(devID)
 
 	// Rate limit
-	count, _ := a.Store.GetTopupCount(devID)
 	if count > 2 {
 		writeError(w, http.StatusTooManyRequests, "too many attempts")
 		return
@@ -418,24 +457,58 @@ func (a *App) handleTopup(w http.ResponseWriter, r *http.Request) {
 	topupCancels[devID] = cancelCh
 	topupCancelsMu.Unlock()
 
+	// Store initial topup status for polling (captive portal fallback)
+	initialStatus := map[string]interface{}{
+		"amt": 0,
+		"mb":  0,
+		"cd":  30,
+	}
+	topupStatusMu.Lock()
+	topupStatus[devID] = initialStatus
+	topupStatusMu.Unlock()
+
+	// Notify client immediately that topup is starting
+	a.Hub.SendToDevice(devID, ws.MsgTopupProgress, initialStatus)
+
 	resultCh := a.Coinslot.RunTopup(mac, func(n int) float64 {
 		return a.AmountToMB(n)
 	}, cancelCh)
 
-	// Stream results via WebSocket
+	// Stream results via WebSocket and update polling cache
 	go func() {
 		var lastResult gpio.TopupResult
 		for res := range resultCh {
 			lastResult = res
-			a.Hub.SendToIP(ip, ws.MsgTopupProgress, res)
+			// Update polling cache for captive portal
+			topupStatusMu.Lock()
+			topupStatus[devID] = map[string]interface{}{
+				"amt": res.Amount,
+				"mb":  res.MB,
+				"cd":  res.Countdown,
+			}
+			topupStatusMu.Unlock()
+
+			a.Hub.SendToDevice(devID, ws.MsgTopupProgress, res)
 		}
 
-		// Cleanup cancel channel
+		// Cleanup
 		topupCancelsMu.Lock()
 		delete(topupCancels, devID)
 		topupCancelsMu.Unlock()
 
+		topupStatusMu.Lock()
+		delete(topupStatus, devID)
+		topupStatusMu.Unlock()
+
 		if lastResult.Cancelled && lastResult.Amount == 0 {
+			// Topup was cancelled with no coins inserted; notify client to reset UI
+			du, _ := a.Store.GetDataUsage(devID)
+			a.Hub.SendToDevice(devID, ws.MsgTopupDone, map[string]interface{}{
+				"amt":      0,
+				"mb":       0,
+				"mb_limit": du.MBLimit,
+				"mb_used":  du.MBUsed,
+			})
 			return
 		}
 
@@ -444,17 +517,29 @@ func (a *App) handleTopup(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		// Record session
-		mb := a.AmountToMB(lastResult.Amount)
-		a.Store.AddSession(devID, float64(lastResult.Amount), mb)
-		a.Store.ResetTopupCount(devID)
+		// Record session - re-verify device at credit time to handle reconnects
+		// Use current device at IP to ensure the device making the request gets credit
+		creditDevID, _ := a.deviceForIP(ip)
+		if creditDevID == 0 {
+			log.Printf("topup: device at %s no longer available for credit", ip)
+			return
+		}
+		if creditDevID != devID {
+			log.Printf("topup: device changed from %d to %d at IP %s", devID, creditDevID, ip)
+		}
 
-		// Open firewall
-		a.IPT.AddClient(ip)
+		mb := a.AmountToMB(lastResult.Amount)
+		a.Store.AddSession(creditDevID, float64(lastResult.Amount), mb)
+		a.Store.ResetTopupCount(creditDevID)
+
+		// Open firewall (only if not already connected to avoid redundant iptables entries)
+		if !a.IPT.IsConnected(ip) {
+			a.IPT.AddClient(ip)
+		}
 
 		// Notify client
-		du, _ := a.Store.GetDataUsage(devID)
-		a.Hub.SendToIP(ip, ws.MsgTopupDone, map[string]interface{}{
+		du, _ := a.Store.GetDataUsage(creditDevID)
+		a.Hub.SendToDevice(devID, ws.MsgTopupDone, map[string]interface{}{
 			"amt":      lastResult.Amount,
 			"mb":       mb,
 			"mb_limit": du.MBLimit,
@@ -463,8 +548,8 @@ func (a *App) handleTopup(w http.ResponseWriter, r *http.Request) {
 
 		// Refresh the device token on every top-up, per the 30-day expiry
 		// policy — keeps a regularly-paying device's token alive long term.
-		if token := a.mintDeviceToken(devID); token != "" {
-			a.Hub.SendToIP(ip, ws.MsgDeviceToken, map[string]string{"token": token})
+		if token := a.mintDeviceToken(creditDevID); token != "" {
+			a.Hub.SendToDevice(devID, ws.MsgDeviceToken, map[string]string{"token": token})
 		}
 
 		// Notify admin
@@ -515,6 +600,28 @@ func (a *App) handleTopupCheck(w http.ResponseWriter, r *http.Request) {
 
 	// Active topup in progress — WS handles streaming, but return 200 for legacy
 	w.WriteHeader(http.StatusOK)
+}
+
+func (a *App) handleTopupChecker(w http.ResponseWriter, r *http.Request) {
+	// Poll endpoint for checking topup progress (like PHP version)
+	// Used by captive portal popup which may not support WebSocket
+	ip := a.clientIP(r)
+	devID, _ := a.deviceForIP(ip)
+	if devID == 0 {
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+
+	topupStatusMu.RLock()
+	status, exists := topupStatus[devID]
+	topupStatusMu.RUnlock()
+
+	if !exists {
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+
+	writeJSON(w, status)
 }
 
 func (a *App) handleNetworkStatus(w http.ResponseWriter, r *http.Request) {
@@ -592,13 +699,15 @@ func (a *App) handleShare(w http.ResponseWriter, r *http.Request) {
 
 		// Notify receiver via WS
 		receiverIP, _ := a.Store.GetDeviceIP(targetDevID)
-		a.Hub.SendToIP(receiverIP, ws.MsgShareReceived, map[string]string{
+		a.Hub.SendToDevice(targetDevID, ws.MsgShareReceived, map[string]string{
 			"message": "You Received " + FormatMB(float64(size)),
 		})
-		a.Hub.SendToIP(receiverIP, ws.MsgDataUsage, a.deviceUsagePayload(targetDevID, receiverIP))
+		a.Hub.SendToDevice(targetDevID, ws.MsgDataUsage, a.deviceUsagePayload(targetDevID, receiverIP))
 
-		// Connect receiver
-		a.IPT.AddClient(receiverIP)
+		// Connect receiver (only if not already connected)
+		if !a.IPT.IsConnected(receiverIP) {
+			a.IPT.AddClient(receiverIP)
+		}
 
 		w.Write([]byte("Successfully Shared " + FormatMB(float64(size))))
 
@@ -772,16 +881,41 @@ func (a *App) handleAdminDevice(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	devID, _ := a.Store.GetDeviceIDByMAC(mac)
+	devID, err := a.Store.GetDeviceIDByMAC(mac)
+	if err != nil {
+		log.Printf("get device id by mac: %v", err)
+		writeError(w, http.StatusInternalServerError, "failed to lookup device")
+		return
+	}
 	if devID == 0 {
 		writeError(w, http.StatusNotFound, "device not found")
 		return
 	}
 
-	dev, _ := a.Store.GetDeviceInfo(devID)
-	du, _ := a.Store.GetDataUsage(devID)
-	activeAt, _ := a.Store.GetActiveAt(devID)
-	ip, _ := a.Store.GetDeviceIP(devID)
+	dev, err := a.Store.GetDeviceInfo(devID)
+	if err != nil {
+		log.Printf("get device info: %v", err)
+		writeError(w, http.StatusInternalServerError, "failed to retrieve device info")
+		return
+	}
+	du, err := a.Store.GetDataUsage(devID)
+	if err != nil {
+		log.Printf("get data usage: %v", err)
+		writeError(w, http.StatusInternalServerError, "failed to retrieve data usage")
+		return
+	}
+	activeAt, err := a.Store.GetActiveAt(devID)
+	if err != nil {
+		log.Printf("get active at: %v", err)
+		writeError(w, http.StatusInternalServerError, "failed to retrieve activity timestamp")
+		return
+	}
+	ip, err := a.Store.GetDeviceIP(devID)
+	if err != nil {
+		log.Printf("get device ip: %v", err)
+		writeError(w, http.StatusInternalServerError, "failed to retrieve device IP")
+		return
+	}
 	connected := a.IPT.IsConnected(ip)
 
 	writeJSON(w, map[string]interface{}{
@@ -810,7 +944,12 @@ func (a *App) handleAdminTxn(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusNotFound, "device not found")
 			return
 		}
-		sessions, _ := a.Store.GetDeviceSessions(devID)
+		sessions, err := a.Store.GetDeviceSessions(devID)
+		if err != nil {
+			log.Printf("get device sessions: %v", err)
+			writeError(w, http.StatusInternalServerError, "failed to retrieve sessions")
+			return
+		}
 		if sessions == nil {
 			sessions = []db.Session{}
 		}
@@ -818,7 +957,12 @@ func (a *App) handleAdminTxn(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	txns, _ := a.Store.GetAllTransactions(offset, limit)
+	txns, err := a.Store.GetAllTransactions(offset, limit)
+	if err != nil {
+		log.Printf("get all transactions: %v", err)
+		writeError(w, http.StatusInternalServerError, "failed to retrieve transactions")
+		return
+	}
 	if txns == nil {
 		txns = []db.Transaction{}
 	}
@@ -885,8 +1029,9 @@ func (a *App) handleAdminGPIO(w http.ResponseWriter, r *http.Request) {
 		n, _ := r.Body.Read(body)
 
 		var req struct {
-			SlotPin   int `json:"slot_pin"`
-			SensorPin int `json:"sensor_pin"`
+			SlotPin    int `json:"slot_pin"`
+			SensorPin  int `json:"sensor_pin"`
+			DebounceMS int `json:"debounce_ms"`
 		}
 		if err := json.Unmarshal(body[:n], &req); err != nil {
 			writeError(w, http.StatusBadRequest, "invalid json")
@@ -900,18 +1045,25 @@ func (a *App) handleAdminGPIO(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, "slot and sensor pins must differ")
 			return
 		}
+		if req.DebounceMS <= 0 || req.DebounceMS > 1000 {
+			writeError(w, http.StatusBadRequest, "debounce delay must be 1-1000ms")
+			return
+		}
 
 		if err := a.Coinslot.Reconfigure(req.SlotPin, req.SensorPin); err != nil {
 			writeError(w, http.StatusConflict, err.Error())
 			return
 		}
 
-		cfg := gpio.Config{SlotPin: req.SlotPin, SensorPin: req.SensorPin}
+		a.Coinslot.SetDebounceDelay(time.Duration(req.DebounceMS) * time.Millisecond)
+
+		cfg := gpio.Config{SlotPin: req.SlotPin, SensorPin: req.SensorPin, DebounceMS: req.DebounceMS}
 		if err := gpio.SaveConfig(a.DataDir, cfg); err != nil {
 			log.Printf("gpio config save: %v", err)
 		}
 
-		writeJSON(w, map[string]string{"status": "saved"})
+		// Return the saved config so frontend can verify
+		writeJSON(w, a.Coinslot.PinConfig())
 
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -958,8 +1110,8 @@ func (a *App) handleAdminMaintenance(w http.ResponseWriter, r *http.Request) {
 			for _, d := range devs {
 				if a.IPT.IsConnected(d.IP) {
 					a.IPT.RemoveClient(d.IP)
-					a.Hub.SendToIP(d.IP, ws.MsgNetworkStatus, map[string]string{"status": "disconnected"})
-					a.Hub.SendToIP(d.IP, ws.MsgAlert, map[string]string{"message": "portal is under maintenance"})
+					a.Hub.SendToDevice(d.ID, ws.MsgNetworkStatus, map[string]string{"status": "disconnected"})
+					a.Hub.SendToDevice(d.ID, ws.MsgAlert, map[string]string{"message": "portal is under maintenance"})
 				}
 			}
 		}
@@ -970,6 +1122,134 @@ func (a *App) handleAdminMaintenance(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+func (a *App) handleAdminTrafficControl(w http.ResponseWriter, r *http.Request) {
+	if a.Shaper == nil {
+		writeError(w, http.StatusInternalServerError, "traffic control not initialized")
+		return
+	}
+
+	switch r.Method {
+	case http.MethodGet:
+		tcCfg := a.Shaper.GetTrafficControlConfig()
+		writeJSON(w, map[string]interface{}{
+			"maximum_dynamic_mbps": tcCfg.MaximumDynamicMbps,
+			"total_bandwidth_mbps": tcCfg.TotalBandwidthMbps,
+			"qdisc_type":           tcCfg.QdiscType,
+			"overhead_bytes":       tcCfg.OverheadBytes,
+			"enable_ingress":       tcCfg.EnableIngress,
+			"interface_name":       tcCfg.InterfaceName,
+			"active_users":         a.Shaper.GetActiveIPCount(),
+			"effective_per_ip":     a.Shaper.GetEffectivePerIPLimit(tcCfg.TotalBandwidthMbps),
+		})
+
+	case http.MethodPut:
+		body := make([]byte, 1024)
+		n, _ := r.Body.Read(body)
+
+		var req struct {
+			MaximumDynamicMbps int    `json:"maximum_dynamic_mbps"`
+			TotalBandwidthMbps int    `json:"total_bandwidth_mbps"`
+			QdiscType          string `json:"qdisc_type"`
+			OverheadBytes      int    `json:"overhead_bytes"`
+			EnableIngress      bool   `json:"enable_ingress"`
+			InterfaceName      string `json:"interface_name"`
+		}
+		if err := json.Unmarshal(body[:n], &req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid json")
+			return
+		}
+
+		if req.MaximumDynamicMbps <= 0 || req.MaximumDynamicMbps > 1000 {
+			writeError(w, http.StatusBadRequest, "maximum_dynamic_mbps must be 1-1000")
+			return
+		}
+		if req.TotalBandwidthMbps <= 0 || req.TotalBandwidthMbps > 10000 {
+			writeError(w, http.StatusBadRequest, "total_bandwidth_mbps must be 1-10000")
+			return
+		}
+
+		// Validate interface if provided
+		if req.InterfaceName != "" {
+			if err := bandwidth.ValidateInterface(req.InterfaceName); err != nil {
+				writeError(w, http.StatusBadRequest, fmt.Sprintf("invalid interface: %v", err))
+				return
+			}
+		} else {
+			// Auto-select best available interface
+			req.InterfaceName = bandwidth.SelectInterfaceForTrafficControl("")
+		}
+
+		cfg := bandwidth.TrafficControlConfig{
+			MaximumDynamicMbps: req.MaximumDynamicMbps,
+			TotalBandwidthMbps: req.TotalBandwidthMbps,
+			QdiscType:          req.QdiscType,
+			OverheadBytes:      req.OverheadBytes,
+			EnableIngress:      req.EnableIngress,
+			InterfaceName:      req.InterfaceName,
+		}
+
+		if cfg.QdiscType == "" {
+			cfg.QdiscType = "cake"
+		}
+		if cfg.OverheadBytes <= 0 || cfg.OverheadBytes > 256 {
+			cfg.OverheadBytes = 38
+		}
+
+		if err := a.Shaper.SetTrafficControlConfig(cfg, a.DataDir); err != nil {
+			log.Printf("traffic control config error: %v", err)
+			writeError(w, http.StatusInternalServerError, fmt.Sprintf("traffic control error: %v", err))
+			return
+		}
+
+		writeJSON(w, map[string]string{"status": "saved", "interface": cfg.InterfaceName})
+
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// handleAdminTrafficControlInterfaces lists available network interfaces for traffic control
+func (a *App) handleAdminTrafficControlInterfaces(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	if a.Shaper == nil {
+		writeError(w, http.StatusInternalServerError, "traffic control not initialized")
+		return
+	}
+
+	// Detect available interfaces
+	ifaces := bandwidth.DetectNetworkInterfaces()
+
+	// Get current selected interface from config
+	cfg := a.Shaper.GetTrafficControlConfig()
+	currentIface := cfg.InterfaceName
+
+	// Enhance response with selection info
+	type InterfaceInfo struct {
+		Name     string `json:"name"`
+		Status   string `json:"status"`
+		IP       string `json:"ip"`
+		MAC      string `json:"mac"`
+		Selected bool   `json:"selected"`
+	}
+
+	response := make([]InterfaceInfo, len(ifaces))
+	for i, iface := range ifaces {
+		response[i] = InterfaceInfo{
+			Name:     iface.Name,
+			Status:   iface.Status,
+			IP:       iface.IP,
+			MAC:      iface.MAC,
+			Selected: iface.Name == currentIface,
+		}
+	}
+
+	writeJSON(w, response)
 }
 
 func (a *App) handleAdminSystem(w http.ResponseWriter, r *http.Request) {
@@ -995,18 +1275,46 @@ func (a *App) handleAdminAddSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	devID, _ := a.Store.GetDeviceIDByMAC(mac)
+	devID, err := a.Store.GetDeviceIDByMAC(mac)
+	if err != nil {
+		log.Printf("get device id by mac: %v", err)
+		writeError(w, http.StatusInternalServerError, "failed to lookup device")
+		return
+	}
 	if devID == 0 {
 		writeError(w, http.StatusNotFound, "device not found")
 		return
 	}
 
-	sid, _ := a.Store.AddSession(devID, 0, float64(limit))
+	sid, err := a.Store.AddSession(devID, 0, float64(limit))
+	if err != nil {
+		log.Printf("add session: %v", err)
+		writeError(w, http.StatusInternalServerError, "failed to add session")
+		return
+	}
 
-	du, _ := a.Store.GetDataUsage(devID)
+	du, err := a.Store.GetDataUsage(devID)
+	if err != nil {
+		log.Printf("get data usage: %v", err)
+		writeError(w, http.StatusInternalServerError, "failed to retrieve data usage")
+		return
+	}
+
 	if du.MBLimit > du.MBUsed {
-		ip, _ := a.Store.GetDeviceIP(devID)
-		a.IPT.AddClient(ip)
+		ip, err := a.Store.GetDeviceIP(devID)
+		if err != nil {
+			log.Printf("get device ip: %v", err)
+			writeError(w, http.StatusInternalServerError, "failed to retrieve device IP")
+			return
+		}
+		if ip != "" {
+			if !a.IPT.IsConnected(ip) {
+				if err := a.IPT.AddClient(ip); err != nil {
+					log.Printf("add client: %v", err)
+					// Log but don't fail - the session was added successfully
+				}
+			}
+		}
 	}
 
 	writeJSON(w, map[string]interface{}{
@@ -1018,12 +1326,16 @@ func (a *App) handleAdminAddSession(w http.ResponseWriter, r *http.Request) {
 
 func (a *App) handleAdminDelSession(w http.ResponseWriter, r *http.Request) {
 	sidStr := r.URL.Query().Get("sid")
-	sid, _ := strconv.ParseInt(sidStr, 10, 64)
-	if sid <= 0 {
+	sid, err := strconv.ParseInt(sidStr, 10, 64)
+	if err != nil || sid <= 0 {
 		writeError(w, http.StatusBadRequest, "invalid session id")
 		return
 	}
-	a.Store.RemoveSession(sid)
+	if err := a.Store.RemoveSession(sid); err != nil {
+		log.Printf("remove session: %v", err)
+		writeError(w, http.StatusInternalServerError, "failed to remove session")
+		return
+	}
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -1033,12 +1345,21 @@ func (a *App) handleAdminClearMB(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "mac required")
 		return
 	}
-	devID, _ := a.Store.GetDeviceIDByMAC(mac)
+	devID, err := a.Store.GetDeviceIDByMAC(mac)
+	if err != nil {
+		log.Printf("get device id by mac: %v", err)
+		writeError(w, http.StatusInternalServerError, "failed to lookup device")
+		return
+	}
 	if devID == 0 {
 		writeError(w, http.StatusNotFound, "device not found")
 		return
 	}
-	a.Store.ClearSessions(devID)
+	if err := a.Store.ClearSessions(devID); err != nil {
+		log.Printf("clear sessions: %v", err)
+		writeError(w, http.StatusInternalServerError, "failed to clear sessions")
+		return
+	}
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -1048,17 +1369,38 @@ func (a *App) handleAdminBlock(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "mac required")
 		return
 	}
-	devID, _ := a.Store.GetDeviceIDByMAC(mac)
+	devID, err := a.Store.GetDeviceIDByMAC(mac)
+	if err != nil {
+		log.Printf("get device id by mac: %v", err)
+		writeError(w, http.StatusInternalServerError, "failed to lookup device")
+		return
+	}
 	if devID == 0 {
 		writeError(w, http.StatusNotFound, "device not found")
 		return
 	}
 
-	a.Store.ForceExhaustData(devID)
-	ip, _ := a.Store.GetDeviceIP(devID)
-	a.IPT.RemoveClient(ip)
+	if err := a.Store.ForceExhaustData(devID); err != nil {
+		log.Printf("force exhaust data: %v", err)
+		writeError(w, http.StatusInternalServerError, "failed to block device")
+		return
+	}
 
-	a.Hub.SendToIP(ip, ws.MsgNetworkStatus, map[string]string{"status": "disconnected"})
+	ip, err := a.Store.GetDeviceIP(devID)
+	if err != nil {
+		log.Printf("get device ip: %v", err)
+		writeError(w, http.StatusInternalServerError, "failed to retrieve device IP")
+		return
+	}
+
+	if ip != "" {
+		if err := a.IPT.RemoveClient(ip); err != nil {
+			log.Printf("remove client: %v", err)
+			// Log but don't fail - the device data was already exhausted
+		}
+		a.Hub.SendToDevice(devID, ws.MsgNetworkStatus, map[string]string{"status": "disconnected"})
+	}
+
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -1083,8 +1425,395 @@ func (a *App) pushAdminBandwidth() {
 	a.Hub.SendToAdmins(ws.MsgBandwidth, bs)
 }
 
-// --- Topup cancel registry ---
+func (a *App) handleAdminNetworkConfig(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		cfg, err := a.Net.GetNetworkConfig()
+		if err != nil {
+			log.Printf("get network config: %v", err)
+			writeError(w, http.StatusInternalServerError, "unable to read network config")
+			return
+		}
+		writeJSON(w, cfg)
+
+	case http.MethodPut:
+		body := make([]byte, 4096)
+		n, _ := r.Body.Read(body)
+
+		var req network.NetworkConfig
+		if err := json.Unmarshal(body[:n], &req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid json")
+			return
+		}
+
+		// Apply role-based configuration if roles are specified
+		if len(req.Roles) > 0 {
+			if err := a.Net.ApplyRoleConfiguration(&req); err != nil {
+				writeError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+		}
+
+		if err := a.Net.SetNetworkConfig(&req, a.DataDir); err != nil {
+			log.Printf("set network config: %v", err)
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+
+		writeJSON(w, map[string]string{"status": "saved"})
+
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func (a *App) handleAdminNetworkInterfaces(w http.ResponseWriter, r *http.Request) {
+	defer func() {
+		if rec := recover(); rec != nil {
+			log.Printf("panic in handleAdminNetworkInterfaces: %v", rec)
+			writeError(w, http.StatusInternalServerError, "internal server error")
+		}
+	}()
+
+	switch r.Method {
+	case http.MethodGet:
+		// Discover all available interfaces
+		log.Printf("discovering network interfaces")
+		interfaces, err := a.Net.DiscoverInterfaces()
+		if err != nil {
+			log.Printf("discover interfaces error: %v", err)
+			writeError(w, http.StatusInternalServerError, fmt.Sprintf("unable to discover interfaces: %v", err))
+			return
+		}
+		log.Printf("discovered %d interfaces", len(interfaces))
+
+		// Detect WAN interface (has default route)
+		wanIface := a.Net.DetectWANInterface()
+		log.Printf("detected WAN interface: %s", wanIface)
+
+		// Get current roles from config
+		cfg, err := a.Net.GetNetworkConfig()
+		roleMap := make(map[string]string)
+		if err != nil {
+			log.Printf("get network config: %v (continuing anyway)", err)
+		}
+		if cfg != nil && cfg.Roles != nil {
+			for _, role := range cfg.Roles {
+				roleMap[role.InterfaceName] = role.Role
+			}
+		}
+
+		// Enhance interfaces with detection
+		for i := range interfaces {
+			iface := &interfaces[i]
+
+			// Detect WAN
+			if iface.Name == wanIface {
+				iface.IsWAN = true
+				iface.Role = "wan"
+			}
+
+			// Detect private IP range
+			iface.IsPrivateIP = network.IsPrivateIP(iface.IP)
+
+			// Detect hostapd candidate
+			iface.IsHostapdCandidate = network.IsHostapdCandidate(iface.Name)
+
+			// Override role from config if set
+			if configRole, ok := roleMap[iface.Name]; ok {
+				iface.Role = configRole
+			}
+		}
+
+		writeJSON(w, interfaces)
+
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func (a *App) handleAdminNetworkRoles(w http.ResponseWriter, r *http.Request) {
+	defer func() {
+		if rec := recover(); rec != nil {
+			log.Printf("panic in handleAdminNetworkRoles: %v", rec)
+			writeError(w, http.StatusInternalServerError, "internal server error")
+		}
+	}()
+
+	switch r.Method {
+	case http.MethodGet:
+		// Get current role assignments
+		log.Printf("fetching network roles")
+		cfg, err := a.Net.GetNetworkConfig()
+		if err != nil {
+			log.Printf("get network config error: %v", err)
+			writeError(w, http.StatusInternalServerError, fmt.Sprintf("unable to read config: %v", err))
+			return
+		}
+
+		type roleResponse struct {
+			Roles []network.InterfaceRole `json:"roles"`
+		}
+
+		roles := cfg.Roles
+		if roles == nil {
+			roles = []network.InterfaceRole{}
+		}
+		log.Printf("returning %d roles", len(roles))
+		resp := roleResponse{Roles: roles}
+		writeJSON(w, resp)
+
+	case http.MethodPut:
+		body := make([]byte, 4096)
+		n, _ := r.Body.Read(body)
+
+		var req struct {
+			Roles []network.InterfaceRole `json:"roles"`
+		}
+		if err := json.Unmarshal(body[:n], &req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid json")
+			return
+		}
+
+		// Get current config
+		cfg, err := a.Net.GetNetworkConfig()
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "unable to read config")
+			return
+		}
+
+		// Update roles and apply configuration
+		cfg.Roles = req.Roles
+
+		// Validate and apply role configuration
+		if len(cfg.Roles) > 0 {
+			if err := a.Net.ApplyRoleConfiguration(cfg); err != nil {
+				writeError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+		}
+
+		// Save updated configuration
+		if err := a.Net.SetNetworkConfig(cfg, a.DataDir); err != nil {
+			log.Printf("set network config with roles: %v", err)
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+
+		writeJSON(w, map[string]string{"status": "roles updated"})
+
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func (a *App) handleAdminHostapdConfig(w http.ResponseWriter, r *http.Request) {
+	defer func() {
+		if rec := recover(); rec != nil {
+			log.Printf("panic in handleAdminHostapdConfig: %v", rec)
+			writeError(w, http.StatusInternalServerError, "internal server error")
+		}
+	}()
+
+	switch r.Method {
+	case http.MethodGet:
+		// Get hostapd configuration
+		log.Printf("fetching hostapd config")
+		confPath := filepath.Join(a.DataDir, "conf", "hostapd.conf")
+		cfg, err := network.ReadHostapdConfig(confPath)
+		if err != nil {
+			log.Printf("read hostapd config: %v", err)
+			writeError(w, http.StatusInternalServerError, fmt.Sprintf("unable to read hostapd config: %v", err))
+			return
+		}
+		writeJSON(w, cfg)
+
+	case http.MethodPut:
+		body := make([]byte, 2048)
+		n, _ := r.Body.Read(body)
+
+		var req network.HostapdConfig
+		if err := json.Unmarshal(body[:n], &req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid json")
+			return
+		}
+
+		// Validate
+		if req.SSID == "" {
+			writeError(w, http.StatusBadRequest, "SSID cannot be empty")
+			return
+		}
+		if req.Channel < 1 || req.Channel > 165 {
+			writeError(w, http.StatusBadRequest, "channel must be 1-165")
+			return
+		}
+		if req.Mode == "" {
+			req.Mode = "g" // Default
+		}
+
+		confPath := filepath.Join(a.DataDir, "conf", "hostapd.conf")
+		if err := network.WriteHostapdConfig(confPath, &req); err != nil {
+			log.Printf("write hostapd config: %v", err)
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+
+		// Return updated config
+		confPath = filepath.Join(a.DataDir, "conf", "hostapd.conf")
+		cfg, _ := network.ReadHostapdConfig(confPath)
+		writeJSON(w, cfg)
+
+	case http.MethodPatch:
+		// Toggle hostapd enabled/disabled state
+		body := make([]byte, 256)
+		n, _ := r.Body.Read(body)
+
+		var req struct {
+			Enabled bool `json:"enabled"`
+		}
+		if err := json.Unmarshal(body[:n], &req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid json")
+			return
+		}
+
+		// Control hostapd service
+		if req.Enabled {
+			if err := exec.Command("systemctl", "enable", "--now", "hostapd").Run(); err != nil {
+				log.Printf("enable hostapd: %v", err)
+				writeError(w, http.StatusInternalServerError, "failed to enable hostapd")
+				return
+			}
+		} else {
+			if err := exec.Command("systemctl", "disable", "--now", "hostapd").Run(); err != nil {
+				log.Printf("disable hostapd: %v", err)
+				writeError(w, http.StatusInternalServerError, "failed to disable hostapd")
+				return
+			}
+		}
+
+		// Return current config
+		confPath := filepath.Join(a.DataDir, "conf", "hostapd.conf")
+		cfg, _ := network.ReadHostapdConfig(confPath)
+		writeJSON(w, cfg)
+
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// isLocalhostRequest checks if the request originates from localhost.
+// Only accepts 127.0.0.1, ::1, and localhost.
+func isLocalhostRequest(r *http.Request) bool {
+	host := r.RemoteAddr
+	// RemoteAddr contains IP:port, extract just the IP
+	if idx := strings.LastIndex(host, ":"); idx != -1 {
+		host = host[:idx]
+	}
+	// Remove IPv6 brackets if present
+	host = strings.TrimPrefix(host, "[")
+	host = strings.TrimSuffix(host, "]")
+
+	return host == "127.0.0.1" || host == "::1" || host == "localhost"
+}
+
+// handleDHCPHook processes lease commits from the dhcpd hook.
+// SECURITY: Requires localhost origin AND valid authentication token.
+// Receives: IP, MAC, hostname, token as query parameters.
+// Response: 200 OK on success, 403 Forbidden if not from localhost or invalid token.
+func (a *App) handleDHCPHook(w http.ResponseWriter, r *http.Request) {
+	// Security Layer 1: Verify request is from localhost
+	if !isLocalhostRequest(r) {
+		log.Printf("SECURITY: DHCP hook rejected from unauthorized host %s", r.RemoteAddr)
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Security Layer 2: Verify authentication token
+	token := r.URL.Query().Get("token")
+	expectedToken := a.Net.GetDHCPHookToken()
+	if token != expectedToken {
+		log.Printf("SECURITY: DHCP hook rejected - invalid token from %s", r.RemoteAddr)
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	// Parse hook parameters from query string
+	// dhcpd hook calls with: /api/dhcp_hook?ip=10.0.0.5&mac=AA:BB:CC:DD:EE:FF&hostname=mydevice&token=...
+	ip := r.URL.Query().Get("ip")
+	mac := r.URL.Query().Get("mac")
+	hostname := r.URL.Query().Get("hostname")
+
+	// Validate required fields
+	if ip == "" || mac == "" {
+		http.Error(w, "missing ip or mac", http.StatusBadRequest)
+		return
+	}
+
+	// Normalize MAC to uppercase
+	mac = strings.ToUpper(mac)
+
+	// Submit the lease to the network service
+	lease := network.Lease{
+		IP:       ip,
+		MAC:      mac,
+		Hostname: hostname,
+	}
+
+	if err := a.Net.SubmitHookLease(lease); err != nil {
+		log.Printf("dhcp hook: failed to submit lease %s: %v", mac, err)
+		http.Error(w, "channel full", http.StatusServiceUnavailable)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte("OK"))
+}
+
+// handleAdminDHCPMode returns or changes the DHCP lease monitoring mode.
+// GET: returns { "mode": "hook" | "file_poll" }
+// POST: sets mode; request body: { "mode": "hook" | "file_poll" }
+func (a *App) handleAdminDHCPMode(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		mode := a.Net.GetLeaseMonitorMode()
+		writeJSON(w, map[string]string{"mode": string(mode)})
+
+	case http.MethodPost:
+		var req struct {
+			Mode string `json:"mode"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "invalid request", http.StatusBadRequest)
+			return
+		}
+
+		// Validate mode
+		if req.Mode != string(network.HookMode) && req.Mode != string(network.FilePollMode) {
+			http.Error(w, "invalid mode (must be 'hook' or 'file_poll')", http.StatusBadRequest)
+			return
+		}
+
+		a.Net.SetLeaseMonitorMode(network.LeaseMonitorMode(req.Mode))
+		log.Printf("admin: DHCP monitoring mode changed to %s", req.Mode)
+
+		writeJSON(w, map[string]string{"mode": req.Mode, "status": "changed"})
+
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// --- Topup cancel registry + status cache ---
 var (
 	topupCancels   = make(map[int64]chan struct{})
 	topupCancelsMu = &sync.Mutex{}
+
+	// topupStatus tracks current topup progress for polling endpoint
+	topupStatus   = make(map[int64]map[string]interface{})
+	topupStatusMu = &sync.RWMutex{}
 )

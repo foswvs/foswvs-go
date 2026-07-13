@@ -28,16 +28,26 @@ const Portal = (() => {
   // Device identity survives MAC address changes (iOS/Android randomize MAC
   // per network by default) — the server reunites the balance server-side
   // whenever this token shows up attached to a different-looking device.
+  // Stored in cookie for better captive portal support.
   const DEVICE_TOKEN_KEY = 'pisowifi_device_token';
+  const COOKIE_PATH = '/';
+  const COOKIE_MAX_AGE = 30 * 24 * 60 * 60; // 30 days
 
   function getDeviceToken() {
-    try { return localStorage.getItem(DEVICE_TOKEN_KEY) || ''; }
-    catch (e) { return ''; }
+    const cookies = document.cookie.split('; ');
+    for (let cookie of cookies) {
+      const [key, value] = cookie.split('=');
+      if (decodeURIComponent(key) === DEVICE_TOKEN_KEY) {
+        return decodeURIComponent(value);
+      }
+    }
+    return '';
   }
 
   function setDeviceToken(token) {
-    try { localStorage.setItem(DEVICE_TOKEN_KEY, token); }
-    catch (e) { /* localStorage unavailable (private mode, etc.) — non-fatal */ }
+    if (!token) return;
+    const secure = location.protocol === 'https:' ? '; Secure' : '';
+    document.cookie = `${DEVICE_TOKEN_KEY}=${encodeURIComponent(token)}; Path=${COOKIE_PATH}; Max-Age=${COOKIE_MAX_AGE}; SameSite=Lax${secure}`;
   }
 
   return { peso, formatMB, toast, initNav, getDeviceToken, setDeviceToken };

@@ -17,6 +17,27 @@ A complete rewrite of [foswvs](https://github.com/foswvs/foswvs.git) that replac
 | **RAM usage** | ~80–120MB (PHP-FPM + Nginx + SQLite) | ~5–15MB |
 | **Concurrency** | PHP process-per-request | Goroutines (thousands of concurrent clients) |
 
+## Progressive Web App (PWA)
+
+foswvs-go is a full Progressive Web App with offline support, installable on mobile devices, and fast loading.
+
+- **Install on home screen** — Add the app like a native app (Android/iOS)
+- **Works offline** — Cached assets load instantly, even without internet
+- **Service Worker** — Smart caching for speed and reliability
+- **Responsive** — Perfect on any device
+- **Web Push** — Future support for notifications
+
+See [PWA.md](PWA.md) for setup, customization, and testing instructions.
+
+### Generate PWA Icons
+
+```bash
+npm install sharp
+node scripts/generate-pwa-icons.js
+```
+
+Or see [web/static/icons/README.md](web/static/icons/README.md) for manual icon generation.
+
 ## Installation
 
 ### Quick start (Raspberry Pi)
