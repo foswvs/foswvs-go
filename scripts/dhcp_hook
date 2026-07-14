@@ -1,0 +1,50 @@
+#!/bin/bash
+# DHCP Hook Script - Called by dhcpd on commit
+# Arguments: IP MAC HOSTNAME
+# Reads authentication token from config dir and submits lease info to foswvs-go API
+
+IP="$1"
+MAC="$2"
+HOSTNAME="$3"
+
+# Validate required parameters
+if [[ -z "$IP" ]] || [[ -z "$MAC" ]]; then
+    exit 1
+fi
+
+# Set default hostname if empty
+if [[ -z "$HOSTNAME" ]]; then
+    HOSTNAME="-NA-"
+fi
+
+echo "$IP - $MAC - $HOSTNAME" > log.txt
+# Read authentication token from config directory
+# Token is generated on foswvs-go startup and regenerated on every restart
+TOKEN_FILE="/home/pi/foswvs-go/.dhcp_hook_token"
+
+# Retry logic for token file (may not exist immediately after startup)
+MAX_RETRIES=5
+RETRY_COUNT=0
+
+while [[ ! -f "$TOKEN_FILE" ]] && [[ $RETRY_COUNT -lt $MAX_RETRIES ]]; do
+    RETRY_COUNT=$((RETRY_COUNT + 1))
+    sleep 0.1
+done
+
+# If token file not found after retries, fail gracefully
+if [[ ! -f "$TOKEN_FILE" ]]; then
+    exit 1
+fi
+
+# Read token (single line, no trailing newline)
+TOKEN=$(cat "$TOKEN_FILE" 2>/dev/null)
+
+if [[ -z "$TOKEN" ]]; then
+    exit 1
+fi
+
+# Call the foswvs-go DHCP hook endpoint with authentication token
+curl -s "http://localhost/api/dhcp_hook?ip=$IP&mac=$MAC&hostname=$HOSTNAME&token=$TOKEN" > /dev/null 2>&1
+
+exit 0
+

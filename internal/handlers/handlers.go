@@ -1770,6 +1770,12 @@ func (a *App) handleDHCPHook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Update device in database to refresh updated_at timestamp
+	if _, err := a.Store.UpsertDevice(mac, ip, hostname); err != nil {
+		log.Printf("dhcp hook: failed to upsert device %s: %v", mac, err)
+		// Don't fail the response — the lease was submitted successfully
+	}
+
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte("OK"))
 }

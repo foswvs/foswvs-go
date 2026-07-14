@@ -140,3 +140,73 @@
 .rate-edit-row .rm-btn svg { width: 16px; height: 16px; }
 
 .empty-state.small { padding: 24px 12px; }
+
+/* --- Skeleton screens & loading states --- */
+.skeleton {
+  background: linear-gradient(90deg, var(--bg) 0%, var(--border) 50%, var(--bg) 100%);
+  background-size: 200% 100%;
+  animation: shimmer 2s infinite;
+  border-radius: var(--radius-sm);
+}
+
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton { animation: none; background: var(--border); }
+}
+
+.skeleton-text { height: 16px; margin-bottom: 8px; }
+.skeleton-text.large { height: 24px; }
+.skeleton-text.small { height: 12px; }
+
+.skeleton-earnings { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.skeleton-earnings .item { padding: 10px 4px; }
+.skeleton-earnings .value { height: 32px; margin-bottom: 8px; border-radius: var(--radius-sm); }
+.skeleton-earnings .label { height: 12px; border-radius: var(--radius-sm); }
+
+.skeleton-sysinfo { display: flex; justify-content: center; gap: 10px; }
+.skeleton-sysinfo .chip { height: 32px; width: 120px; }
+
+.skeleton-list-row {
+  display: flex; align-items: center; gap: 10px; padding: 12px 0; border-bottom: 1px solid var(--border);
+}
+.skeleton-list-row .icon { width: 34px; height: 34px; flex-shrink: 0; }
+.skeleton-list-row .main { flex: 1; }
+.skeleton-list-row .title { height: 16px; margin-bottom: 6px; }
+.skeleton-list-row .sub { height: 12px; width: 60%; }
+.skeleton-list-row .meta { width: 60px; height: 12px; margin-left: auto; }
+
+.skeleton-device-detail { padding: 0; }
+.skeleton-device-detail .header { text-align: center; margin-bottom: 16px; }
+.skeleton-device-detail .mac { height: 24px; width: 140px; margin: 0 auto 8px; }
+.skeleton-device-detail .host { height: 14px; width: 100px; margin: 0 auto; }
+.skeleton-device-detail .status { height: 28px; width: 100px; margin: 12px auto; }
+.skeleton-device-detail .progress { height: 8px; margin: 12px 0; }
+.skeleton-device-detail .info-row { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--border); }
+.skeleton-device-detail .info-label { height: 12px; width: 60px; }
+.skeleton-device-detail .info-value { height: 12px; width: 80px; }
+.skeleton-device-detail .action-btn { height: 44px; margin-bottom: 10px; }
+
+/* Fade-in animation for content */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.fade-in { animation: fadeIn 0.3s ease-in; }
+
+/* Hide content while skeleton shows */
+.loading-content {
+  opacity: 0;
+  pointer-events: none;
+  height: 0;
+  overflow: hidden;
+}
+
+.loaded-content {
+  opacity: 1;
+  pointer-events: auto;
+}

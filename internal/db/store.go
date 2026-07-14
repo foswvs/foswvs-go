@@ -394,8 +394,8 @@ func (s *Store) ResetTopupCount(deviceID int64) error {
 func (s *Store) GetAllDevices() ([]Device, error) {
 	rows, err := s.db.Query(
 		`SELECT id, mac_addr, IFNULL(ip_addr,'-NA-'), IFNULL(hostname,'-NA-'),
-		        CAST(strftime('%s', created_at) AS INTEGER) * 1000
-		 FROM devices WHERE mac_addr != '' ORDER BY created_at DESC`,
+		        CAST(strftime('%s', updated_at) AS INTEGER) * 1000
+		 FROM devices WHERE mac_addr != '' ORDER BY updated_at DESC`,
 	)
 	if err != nil {
 		return nil, err

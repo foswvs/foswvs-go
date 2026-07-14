@@ -72,35 +72,63 @@
       </div>
 
       <div class="card earnings-hero">
-        <div class="label">Today&rsquo;s Earnings</div>
-        <div class="value" id="e-day">&#8369;0</div>
-        <div class="earnings-sub">
-          <div class="item"><div class="val" id="e-week">&#8369;0</div><div class="label">Week</div></div>
-          <div class="item"><div class="val" id="e-month">&#8369;0</div><div class="label">Month</div></div>
-          <div class="item"><div class="val" id="e-year">&#8369;0</div><div class="label">Year</div></div>
+        <div id="earnings-skeleton">
+          <div class="label skeleton skeleton-text"></div>
+          <div class="skeleton skeleton-text large" style="margin: 8px 0;"></div>
+          <div class="skeleton-earnings">
+            <div class="item"><div class="skeleton value skeleton-text large"></div><div class="skeleton label skeleton-text"></div></div>
+            <div class="item"><div class="skeleton value skeleton-text large"></div><div class="skeleton label skeleton-text"></div></div>
+            <div class="item"><div class="skeleton value skeleton-text large"></div><div class="skeleton label skeleton-text"></div></div>
+          </div>
+        </div>
+        <div id="earnings-content" class="loading-content fade-in">
+          <div class="label">Today&rsquo;s Earnings</div>
+          <div class="value" id="e-day">&#8369;0</div>
+          <div class="earnings-sub">
+            <div class="item"><div class="val" id="e-week">&#8369;0</div><div class="label">Week</div></div>
+            <div class="item"><div class="val" id="e-month">&#8369;0</div><div class="label">Month</div></div>
+            <div class="item"><div class="val" id="e-year">&#8369;0</div><div class="label">Year</div></div>
+          </div>
         </div>
       </div>
 
       <div class="card earnings-hero">
-        <div class="label">Today&rsquo;s Bandwidth</div>
-        <div class="value" id="bw-day">0MB</div>
-        <div class="earnings-sub">
-          <div class="item"><div class="val" id="bw-week">0MB</div><div class="label">Week</div></div>
-          <div class="item"><div class="val" id="bw-month">0MB</div><div class="label">Month</div></div>
-          <div class="item"><div class="val" id="bw-year">0MB</div><div class="label">Year</div></div>
+        <div id="bandwidth-skeleton">
+          <div class="label skeleton skeleton-text"></div>
+          <div class="skeleton skeleton-text large" style="margin: 8px 0;"></div>
+          <div class="skeleton-earnings">
+            <div class="item"><div class="skeleton value skeleton-text large"></div><div class="skeleton label skeleton-text"></div></div>
+            <div class="item"><div class="skeleton value skeleton-text large"></div><div class="skeleton label skeleton-text"></div></div>
+            <div class="item"><div class="skeleton value skeleton-text large"></div><div class="skeleton label skeleton-text"></div></div>
+          </div>
+        </div>
+        <div id="bandwidth-content" class="loading-content fade-in">
+          <div class="label">Today&rsquo;s Bandwidth</div>
+          <div class="value" id="bw-day">0MB</div>
+          <div class="earnings-sub">
+            <div class="item"><div class="val" id="bw-week">0MB</div><div class="label">Week</div></div>
+            <div class="item"><div class="val" id="bw-month">0MB</div><div class="label">Month</div></div>
+            <div class="item"><div class="val" id="bw-year">0MB</div><div class="label">Year</div></div>
+          </div>
         </div>
       </div>
 
       <div class="card">
-        <div class="sysinfo-row">
-          <span class="sysinfo-chip">
-            <svg viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4v10.54a4 4 0 1 1-4 0V4a2 2 0 0 1 4 0z"/></svg>
-            CPU <span id="sys-temp">--</span>&deg;
-          </span>
-          <span class="sysinfo-chip">
-            <svg viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15.5 14"/></svg>
-            <span id="sys-uptime">--</span>
-          </span>
+        <div id="sysinfo-skeleton" class="skeleton-sysinfo">
+          <div class="skeleton chip"></div>
+          <div class="skeleton chip"></div>
+        </div>
+        <div id="sysinfo-content" class="loading-content fade-in">
+          <div class="sysinfo-row">
+            <span class="sysinfo-chip">
+              <svg viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4v10.54a4 4 0 1 1-4 0V4a2 2 0 0 1 4 0z"/></svg>
+              CPU <span id="sys-temp">--</span>&deg;
+            </span>
+            <span class="sysinfo-chip">
+              <svg viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15.5 14"/></svg>
+              <span id="sys-uptime">--</span>
+            </span>
+          </div>
         </div>
       </div>
 
@@ -125,6 +153,11 @@
         <div style="margin-bottom:16px;">
           <input type="text" id="device-search" placeholder="Search by IP, MAC, or hostname..." style="width:100%; padding:10px; border:1px solid var(--border); border-radius:6px; background:var(--bg-elevated); color:var(--text); font-size:14px;">
         </div>
+        <div id="device-skeleton" style="display:none;">
+          <div class="skeleton-list-row"><div class="skeleton icon"></div><div class="main"><div class="skeleton title"></div><div class="skeleton sub"></div></div><div class="skeleton meta"></div></div>
+          <div class="skeleton-list-row"><div class="skeleton icon"></div><div class="main"><div class="skeleton title"></div><div class="skeleton sub"></div></div><div class="skeleton meta"></div></div>
+          <div class="skeleton-list-row"><div class="skeleton icon"></div><div class="main"><div class="skeleton title"></div><div class="skeleton sub"></div></div><div class="skeleton meta"></div></div>
+        </div>
         <div id="device-list"></div>
       </div>
     </section>
@@ -132,21 +165,33 @@
     <!-- ===== Device detail (drill-in from Devices) ===== -->
     <section class="view" id="view-device-detail" style="display:none;">
       <div class="card">
-        <div class="device-title">
-          <div class="mac" id="dd-mac">--</div>
-          <div class="host" id="dd-host">--</div>
+        <div id="device-detail-skeleton" class="skeleton-device-detail">
+          <div class="header">
+            <div class="skeleton mac"></div>
+            <div class="skeleton host"></div>
+          </div>
+          <div class="skeleton status"></div>
+          <div class="skeleton progress"></div>
+          <div class="info-row"><div class="skeleton info-label"></div><div class="skeleton info-value"></div></div>
+          <div class="info-row"><div class="skeleton info-label"></div><div class="skeleton info-value"></div></div>
         </div>
-        <div class="status-row">
-          <div class="status-pill" id="dd-status"><span class="dot"></span><span id="dd-status-text">--</span></div>
-        </div>
-        <div class="progress"><div class="progress-fill" id="dd-progress" style="width:0%"></div></div>
-        <div class="progress-caption">
-          <span id="dd-used">0MB used</span>
-          <span id="dd-limit">0MB total</span>
-        </div>
-        <div class="info-list">
-          <div class="row"><span class="label">IP Address</span><span class="value" id="dd-ip">--</span></div>
-          <div class="row"><span class="label">Last Active</span><span class="value" id="dd-active">--</span></div>
+        <div id="device-detail-content" class="loading-content fade-in">
+          <div class="device-title">
+            <div class="mac" id="dd-mac">--</div>
+            <div class="host" id="dd-host">--</div>
+          </div>
+          <div class="status-row">
+            <div class="status-pill" id="dd-status"><span class="dot"></span><span id="dd-status-text">--</span></div>
+          </div>
+          <div class="progress"><div class="progress-fill" id="dd-progress" style="width:0%"></div></div>
+          <div class="progress-caption">
+            <span id="dd-used">0MB used</span>
+            <span id="dd-limit">0MB total</span>
+          </div>
+          <div class="info-list">
+            <div class="row"><span class="label">IP Address</span><span class="value" id="dd-ip">--</span></div>
+            <div class="row"><span class="label">Last Active</span><span class="value" id="dd-active">--</span></div>
+          </div>
         </div>
 
         <div class="action-grid">
@@ -158,16 +203,29 @@
 
       <div class="card">
         <h2>Sessions</h2>
-        <div id="dd-sessions"></div>
-        <div class="empty-state small" id="dd-sessions-empty" style="display:none;">No sessions yet</div>
+        <div id="sessions-skeleton" style="display:none;">
+          <div class="skeleton-list-row"><div class="main"><div class="skeleton title"></div><div class="skeleton sub"></div></div><div class="skeleton meta" style="width:40px;"></div></div>
+          <div class="skeleton-list-row"><div class="main"><div class="skeleton title"></div><div class="skeleton sub"></div></div><div class="skeleton meta" style="width:40px;"></div></div>
+        </div>
+        <div id="sessions-content" class="loading-content fade-in">
+          <div id="dd-sessions"></div>
+          <div class="empty-state small" id="dd-sessions-empty" style="display:none;">No sessions yet</div>
+        </div>
       </div>
     </section>
 
     <!-- ===== Transactions tab ===== -->
     <section class="view" id="view-txn" style="display:none;">
       <div class="card">
-        <div id="txn-list"></div>
-        <div class="empty-state small" id="txn-empty" style="display:none;">No transactions yet</div>
+        <div id="txn-skeleton" style="display:none;">
+          <div class="skeleton-list-row"><div class="main"><div class="skeleton title"></div><div class="skeleton sub"></div></div><div class="skeleton meta" style="width:40px;"></div></div>
+          <div class="skeleton-list-row"><div class="main"><div class="skeleton title"></div><div class="skeleton sub"></div></div><div class="skeleton meta" style="width:40px;"></div></div>
+          <div class="skeleton-list-row"><div class="main"><div class="skeleton title"></div><div class="skeleton sub"></div></div><div class="skeleton meta" style="width:40px;"></div></div>
+        </div>
+        <div id="txn-content" class="loading-content fade-in">
+          <div id="txn-list"></div>
+          <div class="empty-state small" id="txn-empty" style="display:none;">No transactions yet</div>
+        </div>
         <button class="btn btn-secondary btn-block" id="btn-load-more">LOAD MORE</button>
       </div>
     </section>
@@ -579,6 +637,23 @@ function withClickLock(btn, fn) {
   };
 }
 
+// Show skeleton and hide content
+function showSkeleton(skeletonId) {
+  const skeleton = $(skeletonId);
+  if (skeleton) skeleton.style.display = '';
+}
+
+// Hide skeleton and show content with fade-in
+function hideSkeleton(skeletonId, contentId) {
+  const skeleton = $(skeletonId);
+  const content = $(contentId);
+  if (skeleton) skeleton.style.display = 'none';
+  if (content) {
+    content.classList.remove('loading-content');
+    content.classList.add('loaded-content', 'fade-in');
+  }
+}
+
 let ws, currentFilter = 'active', currentMAC = '', txnOffset = 0, loggingOut = false;
 
 // --- Auth ---
@@ -644,6 +719,7 @@ function renderEarnings(d) {
   $('e-week').textContent = peso(d.week);
   $('e-month').textContent = peso(d.month);
   $('e-year').textContent = peso(d.year);
+  hideSkeleton('earnings-skeleton', 'earnings-content');
 }
 
 function renderBandwidth(d) {
@@ -651,6 +727,7 @@ function renderBandwidth(d) {
   $('bw-week').textContent = Portal.formatMB(d.week);
   $('bw-month').textContent = Portal.formatMB(d.month);
   $('bw-year').textContent = Portal.formatMB(d.year);
+  hideSkeleton('bandwidth-skeleton', 'bandwidth-content');
 }
 
 function renderSystem(d) {
@@ -659,6 +736,7 @@ function renderSystem(d) {
   $('login-temp').textContent = t;
   $('sys-uptime').textContent = d.uptime;
   $('login-uptime').textContent = d.uptime;
+  hideSkeleton('sysinfo-skeleton', 'sysinfo-content');
 }
 
 function renderMaintenanceBanner(mc) {
@@ -731,6 +809,7 @@ $('device-search').addEventListener('input', () => {
 });
 
 async function loadDevices(filter) {
+  showSkeleton('device-skeleton');
   const r = await fetch('/api/admin/devices?filter=' + filter);
   allDevices = await r.json();
   renderDevices(allDevices);
@@ -750,6 +829,8 @@ function renderDevices(devs) {
   const el = $('device-list');
   const searchTerm = $('device-search').value;
   const filtered = filterDevicesBySearch(devs, searchTerm);
+
+  $('device-skeleton').style.display = 'none';
 
   if (!filtered || filtered.length === 0) {
     el.innerHTML = '<div class="empty-state small">No devices</div>';
@@ -775,6 +856,13 @@ async function showDevice(mac, parent) {
   currentMAC = mac;
   drillParent = parent || 'devices';
   showView('device-detail');
+
+  showSkeleton('device-detail-skeleton');
+  $('device-detail-content').classList.add('loading-content');
+  $('device-detail-content').classList.remove('loaded-content', 'fade-in');
+  $('sessions-skeleton').style.display = '';
+  $('sessions-content').classList.add('loading-content');
+  $('sessions-content').classList.remove('loaded-content', 'fade-in');
 
   const r = await fetch('/api/admin/device?mac=' + encodeURIComponent(mac));
   const d = await r.json();
@@ -826,6 +914,9 @@ async function showDevice(mac, parent) {
       });
     });
   });
+
+  hideSkeleton('device-detail-skeleton', 'device-detail-content');
+  hideSkeleton('sessions-skeleton', 'sessions-content');
 }
 
 $('btn-add-mb').addEventListener('click', () => openModal('modal-addmb'));
@@ -858,7 +949,13 @@ $('btn-block-dev').addEventListener('click', () => {
 
 // --- Transactions ---
 async function loadTxn(reset) {
-  if (reset) { txnOffset = 0; $('txn-list').innerHTML = ''; }
+  if (reset) {
+    txnOffset = 0;
+    $('txn-list').innerHTML = '';
+    showSkeleton('txn-skeleton');
+    $('txn-content').classList.add('loading-content');
+    $('txn-content').classList.remove('loaded-content', 'fade-in');
+  }
   const r = await fetch(`/api/admin/txn?offset=${txnOffset}&limit=25`);
   const txns = await r.json();
   $('txn-empty').style.display = (txnOffset === 0 && (!txns || txns.length === 0)) ? 'block' : 'none';
@@ -881,6 +978,10 @@ async function loadTxn(reset) {
     row.addEventListener('click', () => showDevice(row.dataset.mac, 'txn'));
     $('txn-list').appendChild(row);
   });
+
+  if (reset) {
+    hideSkeleton('txn-skeleton', 'txn-content');
+  }
 
   txnOffset += 25;
   $('btn-load-more').style.display = (txns && txns.length === 25) ? '' : 'none';
