@@ -167,6 +167,11 @@ func main() {
 	var bw *bandwidth.Shaper
 	if !devMode {
 		bw = bandwidth.NewWithConfig(*iface, *dataDir)
+		// Restore saved traffic control configuration on startup
+		if err := bw.RestoreSavedConfiguration(); err != nil {
+			log.Printf("warning: failed to restore traffic control configuration: %v", err)
+		}
+		// Apply command-line overrides if provided
 		if *dspeed > 0 || *uspeed > 0 {
 			if err := bw.Apply(*dspeed, *uspeed); err != nil {
 				log.Printf("bandwidth shaper: %v", err)
@@ -191,6 +196,7 @@ func main() {
 		JWTSecret:   deviceTokenSecret,
 		Maintenance: handlers.NewMaintenanceState(*dataDir),
 		Shaper:      bw,
+		PrevLeases:  make(map[string]network.Lease),
 	}
 
 	mux := app.Routes()

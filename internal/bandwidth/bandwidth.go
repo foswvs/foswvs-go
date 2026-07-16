@@ -250,6 +250,19 @@ func (s *Shaper) GetEffectivePerIPLimit(totalCapacityMbps int) int {
 	return s.CalculateDynamicPerIPLimit(totalCapacityMbps)
 }
 
+// RestoreSavedConfiguration applies the traffic control configuration that was saved on disk.
+// This is called on application startup to restore previous settings.
+func (s *Shaper) RestoreSavedConfiguration() error {
+	if s.tcConfig.TotalBandwidthMbps <= 0 {
+		log.Printf("no saved bandwidth configuration to restore")
+		return nil
+	}
+	dspeedKbps := s.tcConfig.TotalBandwidthMbps * 1000
+	uspeedKbps := s.tcConfig.TotalBandwidthMbps * 1000
+	log.Printf("restoring traffic control configuration: %d Mbps on interface %s", s.tcConfig.TotalBandwidthMbps, s.iface)
+	return s.Apply(dspeedKbps, uspeedKbps)
+}
+
 func tc(args ...string) error {
 	var stderr bytes.Buffer
 	cmd := exec.Command("sudo", append([]string{"tc"}, args...)...)

@@ -656,6 +656,23 @@ function hideSkeleton(skeletonId, contentId) {
 
 let ws, currentFilter = 'active', currentMAC = '', txnOffset = 0, loggingOut = false;
 
+// --- Auth helpers ---
+function handleAuthError() {
+  loggingOut = true;
+  if (ws) ws.close();
+  Portal.toast('Session expired. Please log in again.', false, {noNavOffset:true});
+  setTimeout(() => location.reload(), 500);
+}
+
+async function fetchWithAuth(url, options) {
+  const r = await fetch(url, options);
+  if (r.status === 401) {
+    handleAuthError();
+    throw new Error('Unauthorized');
+  }
+  return r;
+}
+
 // --- Auth ---
 async function checkAuth() {
   const r = await fetch('/api/admin/check');
@@ -698,8 +715,17 @@ function showDash() {
 function connectAdminWS() {
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   ws = new WebSocket(`${proto}://${location.host}/ws/admin`);
+
+  ws.onerror = () => {
+    if (!loggingOut) handleAuthError();
+  };
+
   ws.onmessage = e => {
     const msg = JSON.parse(e.data);
+    if (msg.type === 'unauthorized') {
+      handleAuthError();
+      return;
+    }
     if (msg.type === 'earnings') renderEarnings(msg.data);
     if (msg.type === 'bandwidth') renderBandwidth(msg.data);
     if (msg.type === 'maintenance') renderMaintenanceBanner(msg.data);
@@ -810,7 +836,7 @@ $('device-search').addEventListener('input', () => {
 
 async function loadDevices(filter) {
   showSkeleton('device-skeleton');
-  const r = await fetch('/api/admin/devices?filter=' + filter);
+  const r = await fetchWithAuth('/api/admin/devices?filter=' + filter);
   allDevices = await r.json();
   renderDevices(allDevices);
 }
@@ -864,7 +890,7 @@ async function showDevice(mac, parent) {
   $('sessions-content').classList.add('loading-content');
   $('sessions-content').classList.remove('loaded-content', 'fade-in');
 
-  const r = await fetch('/api/admin/device?mac=' + encodeURIComponent(mac));
+  const r = await fetchWithAuth('/api/admin/device?mac=' + encodeURIComponent(mac));
   const d = await r.json();
 
   $('dd-mac').textContent = d.mac;
@@ -880,7 +906,7 @@ async function showDevice(mac, parent) {
   $('dd-limit').textContent = Portal.formatMB(d.mb_limit) + ' total';
   $('dd-progress').style.width = d.mb_limit > 0 ? Math.min(100, (d.mb_used / d.mb_limit) * 100) + '%' : '0%';
 
-  const tr = await fetch('/api/admin/txn?mac=' + encodeURIComponent(mac));
+  const tr = await fetchWithAuth('/api/admin/txn?mac=' + encodeURIComponent(mac));
   const sessions = await tr.json();
   $('dd-sessions-empty').style.display = (!sessions || sessions.length === 0) ? 'block' : 'none';
   const sessionsHtml = (sessions || []).map(s => `
@@ -904,7 +930,7 @@ async function showDevice(mac, parent) {
       e.stopPropagation();
       const sessionId = btn.dataset.sessionId;
       confirmAction('Delete this session?', `${Portal.formatMB(sessions.find(s => s.id == sessionId).mb_limit)} will be removed.`, async () => {
-        const r = await fetch(`/api/admin/del_session?sid=${sessionId}`);
+        const r = await fetchWithAuth(`/api/admin/del_session?sid=${sessionId}`);
         if (r.ok) {
           Portal.toast('Session deleted', true);
           showDevice(currentMAC);
@@ -924,7 +950,7 @@ $('addmb-cancel').addEventListener('click', () => closeModal('modal-addmb'));
 $('addmb-confirm').addEventListener('click', withClickLock($('addmb-confirm'), async () => {
   const mb = $('addmb-input').value;
   if (!mb || isNaN(mb) || Number(mb) <= 0) { Portal.toast('Enter a valid amount', false); return; }
-  await fetch(`/api/admin/add_session?mac=${encodeURIComponent(currentMAC)}&limit=${mb}`);
+  await fetchWithAuth(`/api/admin/add_session?mac=${encodeURIComponent(currentMAC)}&limit=${mb}`);
   closeModal('modal-addmb');
   $('addmb-input').value = '';
   Portal.toast('Added ' + Portal.formatMB(parseFloat(mb)), true);
@@ -933,7 +959,7 @@ $('addmb-confirm').addEventListener('click', withClickLock($('addmb-confirm'), a
 
 $('btn-clear-mb').addEventListener('click', () => {
   confirmAction('Clear all data?', "This resets the device's usage and balance to zero.", async () => {
-    await fetch(`/api/admin/clear_mb?mac=${encodeURIComponent(currentMAC)}`);
+    await fetchWithAuth(`/api/admin/clear_mb?mac=${encodeURIComponent(currentMAC)}`);
     Portal.toast('Data cleared', true);
     showDevice(currentMAC);
   });
@@ -941,7 +967,7 @@ $('btn-clear-mb').addEventListener('click', () => {
 
 $('btn-block-dev').addEventListener('click', () => {
   confirmAction('Block this device?', 'It will be disconnected and its data marked exhausted.', async () => {
-    await fetch(`/api/admin/block?mac=${encodeURIComponent(currentMAC)}`);
+    await fetchWithAuth(`/api/admin/block?mac=${encodeURIComponent(currentMAC)}`);
     Portal.toast('Device blocked', true);
     showDevice(currentMAC);
   });
@@ -956,7 +982,7 @@ async function loadTxn(reset) {
     $('txn-content').classList.add('loading-content');
     $('txn-content').classList.remove('loaded-content', 'fade-in');
   }
-  const r = await fetch(`/api/admin/txn?offset=${txnOffset}&limit=25`);
+  const r = await fetchWithAuth(`/api/admin/txn?offset=${txnOffset}&limit=25`);
   const txns = await r.json();
   $('txn-empty').style.display = (txnOffset === 0 && (!txns || txns.length === 0)) ? 'block' : 'none';
 
@@ -1002,7 +1028,7 @@ $('row-logout').addEventListener('click', () => {
 
 // --- Rates ---
 async function loadRates() {
-  const r = await fetch('/api/admin/rates');
+  const r = await fetchWithAuth('/api/admin/rates');
   const rates = await r.json();
   $('rates-list').innerHTML = '';
   const sorted = Object.entries(rates || {}).sort((a,b) => parseInt(a[0]) - parseInt(b[0]));
@@ -1033,7 +1059,7 @@ $('btn-save-rates').addEventListener('click', withClickLock($('btn-save-rates'),
     if (a && m) entries.push(a + ':' + m);
   });
   if (!entries.length) { Portal.toast('Add at least one rate', false); return; }
-  await fetch('/api/admin/rates', {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(entries)});
+  await fetchWithAuth('/api/admin/rates', {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(entries)});
   Portal.toast('Rates saved', true);
 }));
 
@@ -1041,7 +1067,7 @@ $('btn-save-rates').addEventListener('click', withClickLock($('btn-save-rates'),
 $('btn-change-pwd').addEventListener('click', withClickLock($('btn-change-pwd'), async () => {
   const p = $('new-pwd').value;
   if (p.length < 3) { Portal.toast('Min 3 characters', false); return; }
-  const r = await fetch('/api/admin/password', {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({password:p})});
+  const r = await fetchWithAuth('/api/admin/password', {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({password:p})});
   if (!r.ok) { Portal.toast('Password update failed', false); return; }
   Portal.toast('Password updated', true);
   $('new-pwd').value = '';
@@ -1049,7 +1075,7 @@ $('btn-change-pwd').addEventListener('click', withClickLock($('btn-change-pwd'),
 
 // --- GPIO ---
 async function loadGPIO() {
-  const r = await fetch('/api/admin/gpio');
+  const r = await fetchWithAuth('/api/admin/gpio');
   const cfg = await r.json();
   $('gpio-slot').value = cfg.slot_pin;
   $('gpio-sensor').value = cfg.sensor_pin;
@@ -1064,7 +1090,7 @@ $('btn-save-gpio').addEventListener('click', withClickLock($('btn-save-gpio'), a
   if (slot === sensor) { Portal.toast('Slot and sensor pins must differ', false); return; }
   if (!debounce || debounce <= 0 || debounce > 1000) { Portal.toast('Debounce delay must be 1-1000ms', false); return; }
 
-  const r = await fetch('/api/admin/gpio', {
+  const r = await fetchWithAuth('/api/admin/gpio', {
     method: 'PUT',
     headers: {'Content-Type':'application/json'},
     body: JSON.stringify({slot_pin: slot, sensor_pin: sensor, debounce_ms: debounce})
@@ -1098,7 +1124,7 @@ document.querySelectorAll('#view-maintenance .chip').forEach(chip => {
 });
 
 async function loadMaintenance() {
-  const r = await fetch('/api/admin/maintenance');
+  const r = await fetchWithAuth('/api/admin/maintenance');
   const cfg = await r.json();
   $('maint-freemb').value = cfg.free_mb || '';
   selectMaintMode(cfg.mode || 'off');
@@ -1111,7 +1137,7 @@ $('btn-save-maintenance').addEventListener('click', withClickLock($('btn-save-ma
     return;
   }
 
-  const r = await fetch('/api/admin/maintenance', {
+  const r = await fetchWithAuth('/api/admin/maintenance', {
     method: 'PUT',
     headers: {'Content-Type':'application/json'},
     body: JSON.stringify({mode: selectedMaintMode, free_mb: freeMB || 0})
@@ -1131,7 +1157,7 @@ let selectedTrafficInterface = '';
 async function loadTrafficControl() {
   try {
     // Load configuration
-    const cfgResp = await fetch('/api/admin/traffic_control');
+    const cfgResp = await fetchWithAuth('/api/admin/traffic_control');
     const cfg = await cfgResp.json();
     $('traffic-max-dynamic-limit').value = cfg.maximum_dynamic_mbps || 50;
     $('traffic-total-bandwidth').value = cfg.total_bandwidth_mbps || 100;
@@ -1145,7 +1171,7 @@ async function loadTrafficControl() {
     updateQdiscButtons();
 
     // Load available interfaces
-    const ifaceResp = await fetch('/api/admin/traffic_control/interfaces');
+    const ifaceResp = await fetchWithAuth('/api/admin/traffic_control/interfaces');
     if (ifaceResp.ok) {
       const interfaces = await ifaceResp.json();
       renderTrafficControlInterfaces(interfaces);
@@ -1308,7 +1334,7 @@ $('btn-save-traffic').addEventListener('click', withClickLock($('btn-save-traffi
     payload.enable_ingress = $('traffic-enable-ingress').checked;
   }
 
-  const r = await fetch('/api/admin/traffic_control', {
+  const r = await fetchWithAuth('/api/admin/traffic_control', {
     method: 'PUT',
     headers: {'Content-Type':'application/json'},
     body: JSON.stringify(payload)
@@ -1331,7 +1357,7 @@ let wanInterface = null;
 async function loadNetworkConfig() {
   try {
     // Fetch network configuration
-    const cfgResp = await fetch('/api/admin/network_config');
+    const cfgResp = await fetchWithAuth('/api/admin/network_config');
     const cfg = await cfgResp.json();
     networkConfigData = cfg;
 
@@ -1342,7 +1368,7 @@ async function loadNetworkConfig() {
     renderDNSServers(cfg.dns_servers || []);
 
     // Fetch discovered interfaces with detection info
-    const ifaceResp = await fetch('/api/admin/network_interfaces');
+    const ifaceResp = await fetchWithAuth('/api/admin/network_interfaces');
     if (!ifaceResp.ok) {
       Portal.toast('Failed to discover network interfaces', false);
       return;
@@ -1482,7 +1508,7 @@ function selectLANInterface(iface, btn) {
 
 async function loadHostapdForInterface(iface) {
   try {
-    const hostapdResp = await fetch('/api/admin/hostapd_config');
+    const hostapdResp = await fetchWithAuth('/api/admin/hostapd_config');
     if (hostapdResp.ok) {
       const hostapdCfg = await hostapdResp.json();
       $('net-hostapd-ssid').value = hostapdCfg.ssid || 'PisoWiFi';
@@ -1575,7 +1601,7 @@ const hostapdToggle = async (e) => {
   e.target.disabled = true;
 
   try {
-    const resp = await fetch('/api/admin/hostapd_config', {
+    const resp = await fetchWithAuth('/api/admin/hostapd_config', {
       method: 'PATCH',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({enabled: enabled})
@@ -1651,7 +1677,7 @@ $('btn-save-network').addEventListener('click', withClickLock($('btn-save-networ
     });
   }
 
-  const r = await fetch('/api/admin/network_config', {
+  const r = await fetchWithAuth('/api/admin/network_config', {
     method: 'PUT',
     headers: {'Content-Type':'application/json'},
     body: JSON.stringify(cfg)
@@ -1670,7 +1696,7 @@ $('btn-save-network').addEventListener('click', withClickLock($('btn-save-networ
       mode: $('net-hostapd-mode').value || 'g'
     };
 
-    const hr = await fetch('/api/admin/hostapd_config', {
+    const hr = await fetchWithAuth('/api/admin/hostapd_config', {
       method: 'PUT',
       headers: {'Content-Type':'application/json'},
       body: JSON.stringify(hostapdCfg)

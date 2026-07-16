@@ -58,8 +58,12 @@ func (ipt *IPT) AddClient(ip string) error {
 
 	// FORWARD in+out
 	if !check("-C", "FORWARD", "-s", ip, "-j", "ACCEPT") {
-		run("-A", "FORWARD", "-s", ip, "-j", "ACCEPT")
-		run("-A", "FORWARD", "-d", ip, "-j", "ACCEPT")
+		if err := run("-A", "FORWARD", "-s", ip, "-j", "ACCEPT"); err != nil {
+			return fmt.Errorf("forward add src: %w", err)
+		}
+		if err := run("-A", "FORWARD", "-d", ip, "-j", "ACCEPT"); err != nil {
+			return fmt.Errorf("forward add dst: %w", err)
+		}
 	}
 
 	return nil
@@ -76,15 +80,21 @@ func (ipt *IPT) RemoveClient(ip string) error {
 
 	// Remove all PREROUTING rules for this IP
 	for check("-t", "nat", "-C", "PREROUTING", "-s", ip, "-j", "ACCEPT") {
-		run("-t", "nat", "-D", "PREROUTING", "-s", ip, "-j", "ACCEPT")
+		if err := run("-t", "nat", "-D", "PREROUTING", "-s", ip, "-j", "ACCEPT"); err != nil {
+			return fmt.Errorf("nat del: %w", err)
+		}
 	}
 
 	// Remove all FORWARD rules for this IP
 	for check("-C", "FORWARD", "-s", ip, "-j", "ACCEPT") {
-		run("-D", "FORWARD", "-s", ip, "-j", "ACCEPT")
+		if err := run("-D", "FORWARD", "-s", ip, "-j", "ACCEPT"); err != nil {
+			return fmt.Errorf("forward del src: %w", err)
+		}
 	}
 	for check("-C", "FORWARD", "-d", ip, "-j", "ACCEPT") {
-		run("-D", "FORWARD", "-d", ip, "-j", "ACCEPT")
+		if err := run("-D", "FORWARD", "-d", ip, "-j", "ACCEPT"); err != nil {
+			return fmt.Errorf("forward del dst: %w", err)
+		}
 	}
 
 	return nil
@@ -134,9 +144,9 @@ func (ipt *IPT) GetForwardByteCounters() (map[string]int64, error) {
 
 		// Attribute traffic to the 10.0.x.x IP
 		var clientIP string
-		if strings.HasPrefix(src, "10.0.") {
+		if validateIP(src) == nil {
 			clientIP = src
-		} else if strings.HasPrefix(dst, "10.0.") {
+		} else if validateIP(dst) == nil {
 			clientIP = dst
 		}
 		if clientIP != "" {
@@ -165,9 +175,11 @@ func RestoreBaseRules() error {
 		// Block traffic to private networks
 		{"-I", "FORWARD", "-p", "tcp", "-d", "192.168.0.0/16", "-j", "REJECT"},
 		// NAT: redirect DNS
-		{"-t", "nat", "-A", "PREROUTING", "-p", "udp", "-m", "udp", "--dport", "53", "-j", "REDIRECT"},
+		{"-t", "nat", "-A", "PREROUTING", "-p", "udp", "--dport", "53", "-j", "REDIRECT"},
+		{"-t", "nat", "-A", "PREROUTING", "-p", "tcp", "--dport", "53", "-j", "REDIRECT"},		
 		// NAT: captive portal redirect for HTTP/HTTPS
-		{"-t", "nat", "-A", "PREROUTING", "-p", "tcp", "-m", "multiport", "--dports", "80,443", "-j", "DNAT", "--to-destination", "10.0.0.1"},
+		{"-t", "nat", "-A", "PREROUTING", "-p", "tcp", "--dport", "80", "-j", "DNAT", "--to-destination", "10.0.0.1"},	
+		{"-t", "nat", "-A", "PREROUTING", "-p", "tcp", "--dport", "443", "-j", "DNAT", "--to-destination", "10.0.0.1"},	
 		// NAT: masquerade outbound
 		{"-t", "nat", "-A", "POSTROUTING", "-j", "MASQUERADE"},
 	}

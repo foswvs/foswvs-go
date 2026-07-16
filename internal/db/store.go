@@ -722,17 +722,17 @@ func (s *Store) GetDeviceFullInfo(deviceID int64) (mac string, du DataUsage, err
 	return mac, du, nil
 }
 
-// GetDeviceTopupInfo fetches MAC and topup count in a single query.
+// GetDeviceTopupInfo fetches MAC, topup count, and last topup time in a single query.
 // Replaces separate GetDeviceMAC + GetTopupCount calls.
-func (s *Store) GetDeviceTopupInfo(deviceID int64) (mac string, topupCount int, err error) {
+func (s *Store) GetDeviceTopupInfo(deviceID int64) (mac string, topupCount int, topupAt time.Time, err error) {
 	err = s.db.QueryRow(
-		"SELECT mac_addr, topup_count FROM devices WHERE id = ?",
+		"SELECT mac_addr, topup_count, topup_at FROM devices WHERE id = ?",
 		deviceID,
-	).Scan(&mac, &topupCount)
+	).Scan(&mac, &topupCount, &topupAt)
 	if err == sql.ErrNoRows {
-		return "", 0, nil
+		return "", 0, time.Time{}, nil
 	}
-	return mac, topupCount, err
+	return mac, topupCount, topupAt, err
 }
 
 // Utility: current time in unix ms.

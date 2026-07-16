@@ -40,6 +40,10 @@ type App struct {
 	JWTSecret   []byte // encrypts device tokens (see reconcileDeviceToken)
 	Maintenance *MaintenanceState
 	Shaper      *bandwidth.Shaper
+
+	// DHCP lease tracking to avoid unnecessary upserts
+	PrevLeasesMu sync.RWMutex
+	PrevLeases   map[string]network.Lease // keyed by MAC
 }
 
 // Routes builds the HTTP router.
@@ -52,6 +56,7 @@ func (a *App) Routes() http.Handler {
 
 	// --- Client API ---
 	mux.HandleFunc("/api/connect", a.handleConnect)
+	mux.HandleFunc("/api/device_info", a.handleDeviceInfo)
 	mux.HandleFunc("/api/data_usage", a.handleDataUsage)
 	mux.HandleFunc("/api/device_token", a.handleDeviceToken)
 	mux.HandleFunc("/api/topup", a.handleTopup)
@@ -62,6 +67,7 @@ func (a *App) Routes() http.Handler {
 	mux.HandleFunc("/api/txn", a.handleDeviceTxn)
 	mux.HandleFunc("/api/share", a.handleShare)
 	mux.HandleFunc("/api/rates", a.handleRatesPublic)
+	mux.HandleFunc("/api/maintenance", a.handleMaintenancePublic)
 
 	// --- DHCP hook (called by dhcpd on commit) ---
 	mux.HandleFunc("/api/dhcp_hook", a.handleDHCPHook)
@@ -431,12 +437,28 @@ func (a *App) handleTopup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	mac, count, _ := a.Store.GetDeviceTopupInfo(devID)
+	mac, count, topupAt, _ := a.Store.GetDeviceTopupInfo(devID)
 
-	// Rate limit
-	if count > 2 {
-		writeError(w, http.StatusTooManyRequests, "too many attempts")
+	// Incremental rate limiting: backoff = 5 * count (seconds), capped at 60s
+	const baseBackoff = 5 * time.Second
+	const maxBackoff = 60 * time.Second
+	backoffDuration := time.Duration(count) * baseBackoff
+	if backoffDuration > maxBackoff {
+		backoffDuration = maxBackoff
+	}
+	nextAllowedTime := topupAt.Add(backoffDuration)
+
+	// Check if still in backoff period
+	now := time.Now()
+	if now.Before(nextAllowedTime) {
+		remaining := int64(nextAllowedTime.Sub(now).Seconds()) + 1
+		writeError(w, http.StatusTooManyRequests, fmt.Sprintf("Please wait %d seconds before trying again.", remaining))
 		return
+	}
+
+	// Reset counter if backoff period has expired
+	if now.After(nextAllowedTime) && count > 0 {
+		count = 0
 	}
 
 	if a.Coinslot.IsBusy() {
@@ -514,6 +536,14 @@ func (a *App) handleTopup(w http.ResponseWriter, r *http.Request) {
 
 		if lastResult.Amount == 0 {
 			a.Store.IncrTopupCount(devID)
+			// Notify client to reset UI (timeout with no coins inserted)
+			du, _ := a.Store.GetDataUsage(devID)
+			a.Hub.SendToDevice(devID, ws.MsgTopupDone, map[string]interface{}{
+				"amt":      0,
+				"mb":       0,
+				"mb_limit": du.MBLimit,
+				"mb_used":  du.MBUsed,
+			})
 			return
 		}
 
@@ -577,6 +607,21 @@ func (a *App) handleTopupCancel(w http.ResponseWriter, r *http.Request) {
 	}
 	topupCancelsMu.Unlock()
 
+	// Cancel without coin inserted = empty tap attempt, apply rate-limiting
+	if ok {
+		a.Store.IncrTopupCount(devID)
+	}
+
+	// If user has sufficient data, connect them
+	du, _ := a.Store.GetDataUsage(devID)
+	if du.MBLimit > du.MBUsed {
+		if !a.IPT.IsConnected(ip) {
+			if err := a.IPT.AddClient(ip); err == nil {
+				a.Hub.SendToDevice(devID, ws.MsgNetworkStatus, map[string]string{"status": "connected"})
+			}
+		}
+	}
+
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -627,6 +672,55 @@ func (a *App) handleTopupChecker(w http.ResponseWriter, r *http.Request) {
 func (a *App) handleNetworkStatus(w http.ResponseWriter, r *http.Request) {
 	ip := a.clientIP(r)
 	writeJSON(w, map[string]string{"status": a.networkStatus(ip)})
+}
+
+func (a *App) handleDeviceInfo(w http.ResponseWriter, r *http.Request) {
+	ip := a.clientIP(r)
+	devID, _ := a.deviceForIP(ip)
+	if devID == 0 {
+		writeError(w, http.StatusUnauthorized, "unknown device")
+		return
+	}
+
+	// Read device token cookie sent by client (for MAC address rotation handling)
+	clientTokenCookie, err := r.Cookie("pisowifi_device_token")
+	clientToken := ""
+	if err == nil {
+		clientToken = clientTokenCookie.Value
+	}
+
+	mac, du, _ := a.Store.GetDeviceFullInfo(devID)
+
+	// Reconcile device token: handles MAC address changes (iOS/Android randomization)
+	// Returns "" if token is still valid, or a new token if device changed
+	token := a.reconcileDeviceToken(devID, clientToken)
+	if token == "" {
+		// Token was valid and unchanged, no new token needed
+		// But we should still send it back for UI consistency
+		token = clientToken
+	}
+
+	// Set device token as cookie (fresh generation if missing or invalid)
+	if token != "" {
+		http.SetCookie(w, &http.Cookie{
+			Name:     "pisowifi_device_token",
+			Value:    token,
+			Path:     "/",
+			MaxAge:   30 * 24 * 60 * 60, // 30 days
+			HttpOnly: false,
+			SameSite: http.SameSiteLaxMode,
+			Secure:   r.TLS != nil,
+		})
+	}
+
+	writeJSON(w, map[string]interface{}{
+		"ip":       ip,
+		"mac":      mac,
+		"mb_limit": du.MBLimit,
+		"mb_used":  du.MBUsed,
+		"status":   a.networkStatus(ip),
+		"token":    token,
+	})
 }
 
 func (a *App) handleDeviceTxn(w http.ResponseWriter, r *http.Request) {
@@ -727,6 +821,10 @@ func (a *App) handleShare(w http.ResponseWriter, r *http.Request) {
 
 func (a *App) handleRatesPublic(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, a.loadRates())
+}
+
+func (a *App) handleMaintenancePublic(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, a.Maintenance.Get())
 }
 
 // --- Admin Handlers ---

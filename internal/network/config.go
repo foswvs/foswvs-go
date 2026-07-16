@@ -210,7 +210,7 @@ func EnsureDHCPConfigWithHook(dataDir string) error {
 	// Read existing config or create default
 	cfg := &NetworkConfig{
 		DHCPRangeStart:    "10.0.0.10",
-		DHCPRangeEnd:      "10.0.0.250",
+		DHCPRangeEnd:      "10.0.15.254",
 		DHCPSubnetMask:    "255.255.240.0",
 		DHCPBroadcastAddr: "10.0.15.255",
 		InterfaceIP:       "10.0.0.1",
@@ -451,8 +451,8 @@ func writeDHCPConfig(cfg *NetworkConfig, dataDir string) error {
 ddns-update-style none;
 authoritative;
 
-default-lease-time 43200;   # 12h
-max-lease-time 86400;       # 24h
+default-lease-time 3600;   # 1h
+max-lease-time 86400;      # 24h
 
 `
 

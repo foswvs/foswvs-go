@@ -9,6 +9,11 @@ import (
 	"github.com/foswvs/foswvs-go/internal/ws"
 )
 
+// leaseChanged checks if a lease's IP or hostname has changed.
+func leaseChanged(prev, current network.Lease) bool {
+	return prev.IP != current.IP || prev.Hostname != current.Hostname
+}
+
 // DHCPWatcher manages device registration based on DHCP lease updates.
 // Behavior depends on the lease monitoring mode:
 // - hook mode: processes leases from the hook callback (async)
@@ -43,11 +48,37 @@ func (a *App) DHCPWatcher(ctx context.Context, net *network.Net) {
 			lockdown := a.Maintenance.Get().Mode == MaintenanceLockdown
 			leases := net.DHCPLeases()
 
+			// Track changes to avoid unnecessary DB writes
+			a.PrevLeasesMu.RLock()
+			prevLeases := a.PrevLeases
+			a.PrevLeasesMu.RUnlock()
+
 			for _, lease := range leases {
-				devID, err := a.Store.UpsertDevice(lease.MAC, lease.IP, lease.Hostname)
-				if err != nil {
-					log.Printf("bg: upsert device %s: %v", lease.MAC, err)
-					continue
+				var devID int64
+				var err error
+
+				// Only upsert if this is a new lease or if the data changed
+				if prev, exists := prevLeases[lease.MAC]; !exists || leaseChanged(prev, lease) {
+					devID, err = a.Store.UpsertDevice(lease.MAC, lease.IP, lease.Hostname)
+					if err != nil {
+						log.Printf("bg: upsert device %s: %v", lease.MAC, err)
+						continue
+					}
+				} else {
+					// Lease unchanged; just look up the device ID
+					devID, err = a.Store.GetDeviceIDByMAC(lease.MAC)
+					if err != nil {
+						log.Printf("bg: get device id %s: %v", lease.MAC, err)
+						continue
+					}
+					if devID == 0 {
+						// Device not in DB; upsert it
+						devID, err = a.Store.UpsertDevice(lease.MAC, lease.IP, lease.Hostname)
+						if err != nil {
+							log.Printf("bg: upsert device %s: %v", lease.MAC, err)
+							continue
+						}
+					}
 				}
 
 				// Defense in depth: the admin API already sweeps everyone
@@ -72,6 +103,15 @@ func (a *App) DHCPWatcher(ctx context.Context, net *network.Net) {
 					}
 				}
 			}
+
+			// Update tracked leases for next iteration
+			newLeaseMap := make(map[string]network.Lease)
+			for _, lease := range leases {
+				newLeaseMap[lease.MAC] = lease
+			}
+			a.PrevLeasesMu.Lock()
+			a.PrevLeases = newLeaseMap
+			a.PrevLeasesMu.Unlock()
 		}
 	}
 }
@@ -80,7 +120,7 @@ func (a *App) DHCPWatcher(ctx context.Context, net *network.Net) {
 // exhausted clients, and pushes real-time usage updates via WebSocket.
 // Replaces the PHP `api/clients` infinite loop.
 func (a *App) UsagePoller(ctx context.Context) {
-	ticker := time.NewTicker(30 * time.Second)
+	ticker := time.NewTicker(15 * time.Second)
 	defer ticker.Stop()
 
 	log.Println("bg: usage poller started")

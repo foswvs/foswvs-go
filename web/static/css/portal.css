@@ -33,6 +33,7 @@
     --border: #262b34;
     --brand: #2dd4bf;
     --brand-dim: rgba(45, 212, 191, 0.14);
+    --warning: #fbbf24;
     --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 4px 20px rgba(0, 0, 0, 0.35);
     color-scheme: dark;
   }
@@ -461,6 +462,22 @@ input:focus { outline: 2px solid var(--brand); outline-offset: -1px; }
 /* the bottom nav is hidden behind an open sender-sheet, so don't reserve space for it */
 .sender-sheet.open ~ .toast { bottom: calc(env(safe-area-inset-bottom) + 16px); }
 @keyframes toastIn { from { opacity: 0; transform: translate(-50%, 10px); } to { opacity: 1; transform: translate(-50%, 0); } }
+
+/* --- Skeleton loader --- */
+.skeleton-card { padding: 18px; }
+.skeleton-item {
+  height: 16px;
+  background: linear-gradient(90deg, var(--border) 25%, var(--bg-elevated) 50%, var(--border) 75%);
+  background-size: 200% 100%;
+  animation: skeleton-loading 1.5s infinite;
+  border-radius: 4px;
+  margin-bottom: 12px;
+}
+.skeleton-item:last-child { margin-bottom: 0; }
+@keyframes skeleton-loading {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }

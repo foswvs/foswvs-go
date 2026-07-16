@@ -43,6 +43,12 @@
         <div class="status-pill checking" id="stat"><span class="dot"></span><span id="stat-text">CHECKING NETWORK</span></div>
       </div>
 
+      <div class="card skeleton-card" id="skeleton-loading" style="display:none;">
+        <div class="skeleton-item"></div>
+        <div class="skeleton-item" style="width:60%;"></div>
+        <div class="skeleton-item" style="width:80%; margin-top:12px;"></div>
+      </div>
+
       <div class="card" id="maintenance-free-banner" style="display:none; text-align:center;">
         <svg viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:28px;height:28px;color:var(--brand);margin-bottom:8px;"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94z"/></svg>
         <h2 style="margin-bottom:4px;">Free WiFi During Maintenance</h2>
@@ -56,7 +62,7 @@
         <div class="countdown" id="topup-cd">waiting for payment</div>
       </div>
 
-      <div class="card" id="btn-card" style="text-align:center;">
+      <div class="card" id="btn-card" style="display:none; text-align:center;">
         <button id="btn" class="btn btn-coin">INSERT COIN</button>
       </div>
 
@@ -225,6 +231,8 @@ const btn = $('btn'), stat = $('stat'), statText = $('stat-text');
 
 let ws, mbFree = 0, mbLimit = 0, topupActive = false, reconnectTimer, netStatus = 'checking', lastCoinAmt = 0, maintenanceMode = 'off';
 let usePolling = false, pollingTimer, topupPollingTimer, wsConnected = false;
+let initDeviceInfoPromise = null; // Deduplicate device_info requests during initialization
+let isInitializing = true; // Track initialization phase to avoid duplicate fetches
 
 function isPopupEnvironment() {
   // Detect captive portal popup environment by checking:
@@ -235,12 +243,72 @@ function isPopupEnvironment() {
          (window.innerWidth < 600 && window.innerHeight < 800);
 }
 
-function fetchDeviceToken() {
-  fetch('/api/device_token', { credentials: 'same-origin' }).then(r => {
-    if (r.ok) return r.json().then(d => {
-      if (d.token) Portal.setDeviceToken(d.token);
+function shouldFetchDeviceInfo() {
+  const hash = location.hash.slice(1) || 'home';
+  return hash === 'home';
+}
+
+function fetchDeviceInfoOnce(showSkeleton = false) {
+  // Deduplicate initialization requests — only fetch once during init phase
+  if (initDeviceInfoPromise) {
+    // Reuse existing request
+    return initDeviceInfoPromise.then(() => {
+      if (showSkeleton) {
+        $('skeleton-loading').style.display = 'none';
+      }
+    }).catch(() => {
+      if (showSkeleton) {
+        $('skeleton-loading').style.display = 'none';
+      }
     });
-  }).catch(() => {});
+  }
+
+  if (showSkeleton) {
+    $('skeleton-loading').style.display = 'block';
+  }
+
+  // Create single fetch promise during initialization
+  initDeviceInfoPromise = fetch('/api/device_info', { credentials: 'same-origin' })
+    .then(r => {
+      if (r.ok) return r.json().then(d => {
+        updateDataUsage(d);
+        updateStatus(d.status);
+        if (d.token) Portal.setDeviceToken(d.token);
+        return d;
+      });
+    });
+
+  return initDeviceInfoPromise.then(() => {
+    if (showSkeleton) {
+      $('skeleton-loading').style.display = 'none';
+    }
+  }).catch(() => {
+    if (showSkeleton) {
+      $('skeleton-loading').style.display = 'none';
+    }
+  });
+}
+
+function fetchDeviceInfo(showSkeleton = false) {
+  // Regular fetch (for polling and navigation)
+  if (showSkeleton) {
+    $('skeleton-loading').style.display = 'block';
+  }
+
+  fetch('/api/device_info', { credentials: 'same-origin' }).then(r => {
+    if (r.ok) return r.json().then(d => {
+      updateDataUsage(d);
+      updateStatus(d.status);
+      if (d.token) Portal.setDeviceToken(d.token);
+      if (showSkeleton) {
+        $('skeleton-loading').style.display = 'none';
+      }
+    });
+  }).catch(() => {
+    if (showSkeleton) {
+      $('skeleton-loading').style.display = 'none';
+    }
+  });
 }
 
 function startPollingFallback() {
@@ -248,21 +316,26 @@ function startPollingFallback() {
   usePolling = true;
   console.warn('⚠️ Captive portal popup detected, using polling fallback (5s interval)');
 
-  // Fetch device token immediately when starting polling
-  fetchDeviceToken();
+  // If init fetch is still in progress, wait for it; otherwise start polling immediately
+  const startPolling = () => {
+    pollingTimer = setInterval(() => {
+      // Poll device info every 5 seconds for updates
+      fetchDeviceInfo(false);
 
-  pollingTimer = setInterval(() => {
-    fetch('/api/data_usage', { credentials: 'same-origin' }).then(r => r.json()).then(d => {
-      updateDataUsage(d);
-    }).catch(() => {});
+      // Also poll maintenance status (required for maintenance mode updates)
+      fetch('/api/maintenance', { credentials: 'same-origin' }).then(r => {
+        if (r.ok) return r.json().then(mc => applyMaintenance(mc));
+      }).catch(() => {});
+    }, 5000);
+  };
 
-    fetch('/api/network_status', { credentials: 'same-origin' }).then(r => r.json()).then(d => {
-      updateStatus(d.status);
-    }).catch(() => {});
-
-    // Refresh device token periodically in case it expires
-    fetchDeviceToken();
-  }, 5000);
+  if (initDeviceInfoPromise) {
+    // Wait for init fetch to complete, then start polling
+    initDeviceInfoPromise.finally(startPolling);
+  } else {
+    // Init already done, start polling immediately
+    startPolling();
+  }
 }
 
 // --- WebSocket (single connection shared by every tab) ---
@@ -394,6 +467,11 @@ function updateButton() {
     return;
   }
 
+  if (maintenanceMode === 'lockdown') {
+    $('btn-card').style.display = 'none';
+    return;
+  }
+
   $('btn-card').style.display = '';
   if (netStatus === 'disconnected' && mbFree > 0) {
     btn.textContent = 'CONNECT';
@@ -409,24 +487,113 @@ function applyMaintenance(mc) {
   maintenanceMode = mc.mode;
   const lockdown = mc.mode === 'lockdown';
   const free = mc.mode === 'free';
+  const isOff = mc.mode === 'off';
 
+  // Show/hide maintenance card
   $('maintenance-card').style.display = lockdown ? '' : 'none';
+
+  // Show status row only in normal mode (not lockdown)
   $('status-row').style.display = lockdown ? 'none' : '';
+
+  // Show data card only in normal mode (not lockdown)
   $('data-card').style.display = lockdown ? 'none' : '';
+
+  // Show free maintenance banner only in free mode
   $('maintenance-free-banner').style.display = free ? '' : 'none';
   if (free) $('maintenance-free-mb').textContent = Portal.formatMB(mc.free_mb);
 
-  if (lockdown) {
+  // Show topup info only during active topup (hide for maintenance modes)
+  if (lockdown || free) {
     $('topup-info').style.display = 'none';
-    $('btn-card').style.display = 'none';
-  } else {
+  }
+
+  // Show button card only when maintenance is OFF
+  // Hide button card when maintenance is active (free or lockdown)
+  $('btn-card').style.display = isOff ? '' : 'none';
+
+  // Update button state only if showing the button card
+  if (isOff) {
     updateButton();
+  }
+}
+
+// --- Topup State Persistence ---
+function saveTopupState() {
+  // Persist topup state across page reloads
+  try {
+    sessionStorage.setItem('pisowifi_topup_active', 'true');
+  } catch (e) {
+    console.warn('⚠️ Failed to save topup state:', e);
+  }
+}
+
+function clearTopupState() {
+  // Clear persisted topup state when topup completes
+  try {
+    sessionStorage.removeItem('pisowifi_topup_active');
+  } catch (e) {
+    console.warn('⚠️ Failed to clear topup state:', e);
+  }
+}
+
+function restoreTopupState() {
+  // On page load, check if there's an active topup and resume
+  try {
+    if (sessionStorage.getItem('pisowifi_topup_active') === 'true') {
+      console.log('📲 Restoring topup state after page reload');
+      topupActive = true;
+      btn.textContent = '...';
+      btn.disabled = true;
+      lastCoinAmt = 0;
+
+      // Resume polling immediately
+      const pollTopupStatus = () => {
+        if (wsConnected) {
+          // WebSocket will deliver updates, stop polling
+          if (topupPollingTimer) {
+            clearInterval(topupPollingTimer);
+            topupPollingTimer = null;
+          }
+          return;
+        }
+
+        fetch('/api/topup_checker', { credentials: 'same-origin' }).then(r => {
+          if (r.status === 200) {
+            return r.json().then(d => {
+              showTopupProgress(d);
+              btn.disabled = false;
+              topupPollingTimer = setTimeout(pollTopupStatus, 1000);
+            });
+          } else if (r.status === 401) {
+            // Topup ended or doesn't exist
+            console.log('ℹ️ Topup is no longer active');
+            topupActive = false;
+            clearTopupState();
+            updateButton();
+            btn.disabled = false;
+          }
+        }).catch(() => {
+          // Retry on error
+          if (topupActive && !wsConnected) {
+            topupPollingTimer = setTimeout(pollTopupStatus, 1000);
+          }
+        });
+      };
+
+      // Start polling immediately
+      if (!wsConnected) {
+        topupPollingTimer = setTimeout(pollTopupStatus, 100);
+      }
+    }
+  } catch (e) {
+    console.warn('⚠️ Failed to restore topup state:', e);
   }
 }
 
 // --- Topup ---
 function showTopupProgress(d) {
   topupActive = true;
+  saveTopupState();
   const info = $('topup-info');
   info.style.display = 'block';
   $('topup-amt').textContent = Portal.peso.format(d.amt);
@@ -453,6 +620,7 @@ function showTopupProgress(d) {
 
 function topupDone(d) {
   topupActive = false;
+  clearTopupState();
   lastCoinAmt = 0;
   if (topupPollingTimer) {
     clearInterval(topupPollingTimer);
@@ -483,6 +651,7 @@ btn.addEventListener('click', () => {
     btn.disabled = true;
     fetch('/api/topup_cancel', { credentials: 'same-origin' }).finally(() => {
       topupActive = false;
+      clearTopupState();
       lastCoinAmt = 0;
       if (topupPollingTimer) {
         clearInterval(topupPollingTimer);
@@ -491,6 +660,7 @@ btn.addEventListener('click', () => {
       $('topup-info').style.display = 'none';
       updateButton();
       btn.disabled = false;
+      fetchDeviceInfo(false);
     });
     return;
   }
@@ -499,6 +669,7 @@ btn.addEventListener('click', () => {
   btn.disabled = true;
   lastCoinAmt = 0;
   btn.textContent = '...';
+  saveTopupState();  // Persist topup state in case of page reload
 
   // Only use polling if WebSocket is unavailable (captive portal or connection failure)
   const pollTopupStatus = () => {
@@ -523,6 +694,7 @@ btn.addEventListener('click', () => {
         topupActive = false;
         updateButton();
         btn.disabled = false;
+        $('topup-info').style.display = 'none';
       }
     }).catch(() => {
       // Retry on error
@@ -534,7 +706,13 @@ btn.addEventListener('click', () => {
 
   fetch('/api/topup', { credentials: 'same-origin' }).then(r => {
     if (r.status === 409) { Portal.toast('coinslot is busy', false); updateButton(); btn.disabled = false; }
-    else if (r.status === 429) { Portal.toast('too many attempts', false); updateButton(); btn.disabled = false; }
+    else if (r.status === 429) {
+      return r.json().then(data => {
+        Portal.toast(data.error, false);
+        updateButton();
+        btn.disabled = false;
+      });
+    }
     else if (r.status === 202 || r.status === 200) { /* Polling will handle progress if needed */ }
     else { updateButton(); btn.disabled = false; }
   }).catch(() => { updateButton(); btn.disabled = false; });
@@ -768,9 +946,20 @@ function showView(name) {
   topbar.style.display = name === 'home' ? 'none' : '';
   topbarTitle.textContent = TITLES[name];
   content.classList.toggle('center-content', name === 'share');
-  if (name === 'rates') loadRates();
-  if (name === 'share') loadShareCode();
-  if (name === 'txn') loadTxn();
+
+  if (name === 'home') {
+    // During init, let initEarlyData handle the fetch (via fetchDeviceInfoOnce)
+    // After init, fetch directly for faster updates on navigation
+    if (!isInitializing) {
+      fetchDeviceInfo(false);
+    }
+  } else if (name === 'rates') {
+    loadRates();
+  } else if (name === 'share') {
+    loadShareCode();
+  } else if (name === 'txn') {
+    loadTxn();
+  }
   window.scrollTo(0, 0);
 }
 
@@ -778,15 +967,18 @@ window.addEventListener('hashchange', () => showView(location.hash.slice(1)));
 
 // --- Early data fetch (before WebSocket) ---
 function initEarlyData() {
-  // Fetch device token and critical data immediately via HTTP to avoid 5s+ WebSocket delay
-  fetchDeviceToken();
+  // Fetch device info immediately via HTTP to avoid 5s+ WebSocket delay
+  // /api/device_info generates fresh token if missing or invalid
+  // Deduplicates requests if multiple init routines call this
+  if (shouldFetchDeviceInfo()) {
+    // Show skeleton loader for home view
+    fetchDeviceInfoOnce(true);
+  }
+  // Skip fetch for #rates, #share, #txn — WebSocket will deliver updates
 
-  fetch('/api/data_usage', { credentials: 'same-origin' }).then(r => {
-    if (r.ok) return r.json().then(d => updateDataUsage(d));
-  }).catch(() => {});
-
-  fetch('/api/network_status', { credentials: 'same-origin' }).then(r => {
-    if (r.ok) return r.json().then(d => updateStatus(d.status));
+  // Fetch maintenance status immediately so UI reflects current state on all views
+  fetch('/api/maintenance', { credentials: 'same-origin' }).then(r => {
+    if (r.ok) return r.json().then(mc => applyMaintenance(mc));
   }).catch(() => {});
 }
 
@@ -809,6 +1001,18 @@ if (isPopupEnvironment()) {
   console.log('🌐 Full browser detected, using WebSocket');
   wsConnect();
 }
+
+// Clear initialization fetch promise after 2 seconds to allow fresh fetches on navigation
+setTimeout(() => {
+  isInitializing = false;
+  if (initDeviceInfoPromise) {
+    initDeviceInfoPromise = null;
+    console.log('✓ Init fetch deduplication complete, ready for navigation');
+  }
+}, 2000);
+
+// Restore topup state if there was an active topup before reload
+restoreTopupState();
 
 // Periodic safety check: ensure button state is correct even if WebSocket messages are delayed or missed
 setInterval(() => {

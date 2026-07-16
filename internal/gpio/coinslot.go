@@ -190,8 +190,8 @@ func (cs *Coinslot) RunTopup(mac string, amountToMB func(int) float64, cancelCh 
 		defer cs.SensorOff()
 
 		count := 0
-		timeout := 50 * time.Second
-		start := time.Now()
+		inactivityTimeout := 15 * time.Second
+		lastCoinTime := time.Now()
 
 		// Timer for periodic status updates (100ms)
 		ticker := time.NewTicker(100 * time.Millisecond)
@@ -207,13 +207,14 @@ func (cs *Coinslot) RunTopup(mac string, amountToMB func(int) float64, cancelCh 
 				// Active polling: check slot pin and debounce
 				if cs.SlotRead() == 1 {
 					count++
+					lastCoinTime = time.Now()
 					time.Sleep(debounce)
 				}
 			}
 
-			// Check timeout and send periodic updates
-			elapsed := time.Since(start)
-			if elapsed >= timeout {
+			// Check inactivity timeout and send periodic updates
+			timeSinceLastCoin := time.Since(lastCoinTime)
+			if timeSinceLastCoin >= inactivityTimeout {
 				mb := amountToMB(count)
 				ch <- TopupResult{MAC: mac, Amount: count, MB: mb, Done: true}
 				return
@@ -222,7 +223,7 @@ func (cs *Coinslot) RunTopup(mac string, amountToMB func(int) float64, cancelCh 
 			// Send periodic progress update on ticker
 			select {
 			case <-ticker.C:
-				remaining := int((timeout - elapsed).Seconds())
+				remaining := int((inactivityTimeout - timeSinceLastCoin).Seconds())
 				if remaining < 0 {
 					remaining = 0
 				}
