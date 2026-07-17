@@ -13,3 +13,4 @@ password.sha256
 certs/
 main
 foswvs-php
+test/

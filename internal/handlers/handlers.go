@@ -1105,7 +1105,7 @@ func (a *App) handleAdminRates(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if len(rates) == 0 {
-			writeError(w, http.StatusBadRequest, "no valid rates")
+			writeError(w, http.StatusBadRequest, "at least one rate is required")
 			return
 		}
 
@@ -1251,7 +1251,7 @@ func (a *App) handleAdminTrafficControl(w http.ResponseWriter, r *http.Request) 
 			TotalBandwidthMbps int    `json:"total_bandwidth_mbps"`
 			QdiscType          string `json:"qdisc_type"`
 			OverheadBytes      int    `json:"overhead_bytes"`
-			EnableIngress      bool   `json:"enable_ingress"`
+			EnableIngress      *bool  `json:"enable_ingress"`
 			InterfaceName      string `json:"interface_name"`
 		}
 		if err := json.Unmarshal(body[:n], &req); err != nil {
@@ -1279,12 +1279,20 @@ func (a *App) handleAdminTrafficControl(w http.ResponseWriter, r *http.Request) 
 			req.InterfaceName = bandwidth.SelectInterfaceForTrafficControl("")
 		}
 
+		// Determine enable_ingress: default to true for CAKE if not provided
+		enableIngress := false
+		if req.EnableIngress != nil {
+			enableIngress = *req.EnableIngress
+		} else if req.QdiscType == "cake" || req.QdiscType == "" {
+			enableIngress = true // Default to true for CAKE
+		}
+
 		cfg := bandwidth.TrafficControlConfig{
 			MaximumDynamicMbps: req.MaximumDynamicMbps,
 			TotalBandwidthMbps: req.TotalBandwidthMbps,
 			QdiscType:          req.QdiscType,
 			OverheadBytes:      req.OverheadBytes,
-			EnableIngress:      req.EnableIngress,
+			EnableIngress:      enableIngress,
 			InterfaceName:      req.InterfaceName,
 		}
 
@@ -1799,6 +1807,37 @@ func (a *App) handleAdminHostapdConfig(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// normalizeMACAddress parses and canonicalizes a MAC address, handling non-zero-padded hex.
+// Converts formats like "8:7C:39:CF:B6:3F" to "08:7c:39:cf:b6:3f".
+func normalizeMACAddress(macStr string) (string, error) {
+	// Replace dashes with colons for uniform parsing
+	normalized := strings.ReplaceAll(macStr, "-", ":")
+
+	// Split by colon to get octets
+	parts := strings.Split(normalized, ":")
+	if len(parts) != 6 {
+		return "", fmt.Errorf("invalid MAC format")
+	}
+
+	// Pad each octet to 2 characters with leading zeros
+	for i, part := range parts {
+		if len(part) > 2 {
+			return "", fmt.Errorf("invalid octet: %s", part)
+		}
+		parts[i] = strings.ToUpper(fmt.Sprintf("%02s", part))
+	}
+
+	paddedMAC := strings.Join(parts, ":")
+
+	// Validate with net.ParseMAC
+	_, err := net.ParseMAC(paddedMAC)
+	if err != nil {
+		return "", err
+	}
+
+	return paddedMAC, nil
+}
+
 // isLocalhostRequest checks if the request originates from localhost.
 // Only accepts 127.0.0.1, ::1, and localhost.
 func isLocalhostRequest(r *http.Request) bool {
@@ -1843,17 +1882,22 @@ func (a *App) handleDHCPHook(w http.ResponseWriter, r *http.Request) {
 	// Parse hook parameters from query string
 	// dhcpd hook calls with: /api/dhcp_hook?ip=10.0.0.5&mac=AA:BB:CC:DD:EE:FF&hostname=mydevice&token=...
 	ip := r.URL.Query().Get("ip")
-	mac := r.URL.Query().Get("mac")
+	macStr := r.URL.Query().Get("mac")
 	hostname := r.URL.Query().Get("hostname")
 
 	// Validate required fields
-	if ip == "" || mac == "" {
+	if ip == "" || macStr == "" {
 		http.Error(w, "missing ip or mac", http.StatusBadRequest)
 		return
 	}
 
-	// Normalize MAC to uppercase
-	mac = strings.ToUpper(mac)
+	// Parse and canonicalize MAC address (handles non-zero-padded hex formats)
+	// net.ParseMAC requires zero-padded format, so preprocess non-padded inputs
+	mac, err := normalizeMACAddress(macStr)
+	if err != nil {
+		http.Error(w, "invalid mac address", http.StatusBadRequest)
+		return
+	}
 
 	// Submit the lease to the network service
 	lease := network.Lease{

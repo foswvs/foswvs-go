@@ -77,8 +77,12 @@ func (s *Shaper) applyHTB(dspeedKbps, uspeedKbps int) error {
 				"u32", "match", "u32", "0", "0", "action", "mirred", "egress", "redirect", "dev", "ifb0"},
 		}
 		// Set up ifb
-		exec.Command("sudo", "modprobe", "ifb", "numifbs=1").Run()
-		exec.Command("sudo", "ip", "link", "set", "dev", "ifb0", "up").Run()
+		if err := exec.Command("sudo", "modprobe", "ifb", "numifbs=1").Run(); err != nil {
+			log.Printf("modprobe ifb failed: %v", err)
+		}
+		if err := exec.Command("sudo", "ip", "link", "set", "dev", "ifb0", "up").Run(); err != nil {
+			log.Printf("ip link ifb0 up failed: %v", err)
+		}
 
 		for _, args := range cmds {
 			if err := tc(args...); err != nil {
@@ -125,6 +129,11 @@ func (s *Shaper) applyCake(dspeedKbps, uspeedKbps int) error {
 	}
 
 	// Download shaping (ingress) - only if enabled
+	if dspeedKbps > 0 {
+		if !s.tcConfig.EnableIngress {
+			log.Printf("CAKE download shaping disabled (EnableIngress is false)")
+		}
+	}
 	if dspeedKbps > 0 && s.tcConfig.EnableIngress {
 		log.Printf("setting up ingress on ifb0 for download shaping")
 		cmds := [][]string{
@@ -134,8 +143,12 @@ func (s *Shaper) applyCake(dspeedKbps, uspeedKbps int) error {
 		}
 
 		// Set up ifb
-		exec.Command("sudo", "modprobe", "ifb", "numifbs=1").Run()
-		exec.Command("sudo", "ip", "link", "set", "dev", "ifb0", "up").Run()
+		if err := exec.Command("sudo", "modprobe", "ifb", "numifbs=1").Run(); err != nil {
+			log.Printf("modprobe ifb failed: %v", err)
+		}
+		if err := exec.Command("sudo", "ip", "link", "set", "dev", "ifb0", "up").Run(); err != nil {
+			log.Printf("ip link ifb0 up failed: %v", err)
+		}
 
 		for _, args := range cmds {
 			if err := tc(args...); err != nil {

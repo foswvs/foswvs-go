@@ -1045,7 +1045,14 @@ function addRateRow(amt, mb) {
     <button class="rm-btn" aria-label="Remove">
       <svg viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
     </button>`;
-  div.querySelector('.rm-btn').addEventListener('click', () => div.remove());
+  div.querySelector('.rm-btn').addEventListener('click', () => {
+    const rows = $('rates-list').querySelectorAll('.rate-edit-row');
+    if (rows.length === 1) {
+      Portal.toast('At least one rate is required', false);
+      return;
+    }
+    div.remove();
+  });
   $('rates-list').appendChild(div);
 }
 $('btn-add-rate').addEventListener('click', () => addRateRow());
